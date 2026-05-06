@@ -6,6 +6,8 @@ import platform
 import socket
 import shutil
 import sys
+import logging
+import uuid
 from datetime import datetime
 
 
@@ -16,6 +18,24 @@ from datetime import datetime
 APP_NAME = "ZeroSOC"
 API_VERSION = "v1"
 START_TIME = time.time()
+
+
+# =========================
+# Logging Config
+# =========================
+
+LOG_DIR = "logs"
+REQUEST_LOG_FILE = os.path.join(LOG_DIR, "requests.log")
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+request_logger = logging.getLogger("zerosoc_request_logger")
+request_logger.setLevel(logging.INFO)
+
+if not request_logger.handlers:
+    file_handler = logging.FileHandler(REQUEST_LOG_FILE, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter("%(message)s"))
+    request_logger.addHandler(file_handler)
 
 
 # =========================
@@ -99,58 +119,118 @@ def normalize_route(path):
 
 
 # =========================
+# Request Context
+# =========================
+
+class RequestContext:
+    def __init__(self, request_id, method, endpoint, client_ip, start_time):
+        self.request_id = request_id
+        self.method = method
+        self.endpoint = endpoint
+        self.client_ip = client_ip
+        self.start_time = start_time
+
+
+def log_request(ctx, status_code, message):
+    latency_ms = round((time.time() - ctx.start_time) * 1000, 2)
+
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "request_id": ctx.request_id,
+        "method": ctx.method,
+        "endpoint": ctx.endpoint,
+        "client_ip": ctx.client_ip,
+        "status_code": status_code,
+        "latency_ms": latency_ms,
+        "message": message
+    }
+
+    request_logger.info(json.dumps(log_entry))
+
+
+# =========================
 # Request Handler
 # =========================
 
 class ZeroSOCHandler(BaseHTTPRequestHandler):
-    def send_json(self, status_code, data):
+    def send_json(self, status_code, data, request_id=None):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
+
+        if request_id:
+            self.send_header("X-Request-ID", request_id)
+
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
-    def handle_health(self, path):
+    def handle_health(self, ctx):
+        log_request(ctx, 200, "Health check requested")
+
         self.send_json(200, {
             "status": "ok",
             "service": APP_NAME,
             "api_version": API_VERSION,
-            "endpoint": path,
+            "endpoint": ctx.endpoint,
             "message": "ZeroSOC backend is running",
-            "current_time": datetime.now().isoformat()
-        })
+            "current_time": datetime.now().isoformat(),
+            "request_id": ctx.request_id
+        }, ctx.request_id)
 
-    def handle_status(self, path):
-        self.send_json(200, {
-            "endpoint": path,
-            "data": get_status_info()
-        })
+    def handle_status(self, ctx):
+        log_request(ctx, 200, "Status requested")
 
-    def handle_system(self, path):
         self.send_json(200, {
-            "endpoint": path,
-            "data": get_system_info()
-        })
+            "endpoint": ctx.endpoint,
+            "data": get_status_info(),
+            "request_id": ctx.request_id
+        }, ctx.request_id)
 
-    def handle_events(self, path):
+    def handle_system(self, ctx):
+        log_request(ctx, 200, "System information requested")
+
         self.send_json(200, {
-            "endpoint": path,
+            "endpoint": ctx.endpoint,
+            "data": get_system_info(),
+            "request_id": ctx.request_id
+        }, ctx.request_id)
+
+    def handle_events(self, ctx):
+        log_request(ctx, 200, "Events endpoint requested")
+
+        self.send_json(200, {
+            "endpoint": ctx.endpoint,
             "data": {
                 "events": [],
                 "message": "Events endpoint ready. Database integration coming next."
-            }
-        })
+            },
+            "request_id": ctx.request_id
+        }, ctx.request_id)
 
-    def handle_devices(self, path):
+    def handle_devices(self, ctx):
+        log_request(ctx, 200, "Devices endpoint requested")
+
         self.send_json(200, {
-            "endpoint": path,
+            "endpoint": ctx.endpoint,
             "data": {
                 "devices": [],
                 "message": "Devices endpoint ready. Network scanner integration coming next."
-            }
-        })
+            },
+            "request_id": ctx.request_id
+        }, ctx.request_id)
 
     def do_GET(self):
+        start_time = time.time()
+        request_id = str(uuid.uuid4())
         path = normalize_route(self.path)
+        client_ip = self.client_address[0]
+
+        ctx = RequestContext(
+            request_id=request_id,
+            method="GET",
+            endpoint=path,
+            client_ip=client_ip,
+            start_time=start_time
+        )
 
         routes = {
             "/health": self.handle_health,
@@ -169,16 +249,32 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         handler = routes.get(path)
 
         if handler is None:
+            log_request(ctx, 404, "Endpoint not found")
+
             self.send_json(404, {
                 "status": "error",
                 "service": APP_NAME,
                 "api_version": API_VERSION,
                 "error": "Endpoint not found",
-                "path": path
-            })
+                "path": path,
+                "request_id": request_id
+            }, request_id)
             return
 
-        handler(path)
+        try:
+            handler(ctx)
+
+        except Exception as error:
+            log_request(ctx, 500, f"Internal server error: {str(error)}")
+
+            self.send_json(500, {
+                "status": "error",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "error": "Internal server error",
+                "path": path,
+                "request_id": request_id
+            }, request_id)
 
 
 # =========================
