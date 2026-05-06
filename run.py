@@ -119,7 +119,7 @@ def normalize_route(path):
 
 
 # =========================
-# Request Context
+# Request Context + Logging
 # =========================
 
 class RequestContext:
@@ -146,6 +146,108 @@ def log_request(ctx, status_code, message):
     }
 
     request_logger.info(json.dumps(log_entry))
+
+
+def get_recent_logs(limit=10):
+    """
+    Reads the most recent structured request logs.
+    Returns an empty list if the log file does not exist yet.
+    """
+    if not os.path.exists(REQUEST_LOG_FILE):
+        return []
+
+    try:
+        with open(REQUEST_LOG_FILE, "r", encoding="utf-8") as file:
+            lines = file.readlines()
+
+        recent_lines = lines[-limit:]
+        logs = []
+
+        for line in recent_lines:
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                logs.append(json.loads(line))
+            except json.JSONDecodeError:
+                logs.append({
+                    "raw": line,
+                    "parse_error": True
+                })
+
+        return logs
+
+    except Exception as error:
+        return [{
+            "error": "Unable to read request logs",
+            "details": str(error)
+        }]
+
+
+def get_request_metrics():
+    """
+    Builds basic request metrics from the structured request log file.
+    """
+    if not os.path.exists(REQUEST_LOG_FILE):
+        return {
+            "total_requests_logged": 0,
+            "status_code_counts": {},
+            "recent_error_count": 0,
+            "average_latency_ms": 0
+        }
+
+    status_code_counts = {}
+    error_count = 0
+    total_latency = 0
+    latency_count = 0
+    total_requests = 0
+
+    try:
+        with open(REQUEST_LOG_FILE, "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                total_requests += 1
+
+                status_code = str(entry.get("status_code", "unknown"))
+                status_code_counts[status_code] = status_code_counts.get(status_code, 0) + 1
+
+                if status_code.startswith("4") or status_code.startswith("5"):
+                    error_count += 1
+
+                latency = entry.get("latency_ms")
+
+                if isinstance(latency, int) or isinstance(latency, float):
+                    total_latency += latency
+                    latency_count += 1
+
+        average_latency = 0
+
+        if latency_count > 0:
+            average_latency = round(total_latency / latency_count, 2)
+
+        return {
+            "total_requests_logged": total_requests,
+            "status_code_counts": status_code_counts,
+            "recent_error_count": error_count,
+            "average_latency_ms": average_latency
+        }
+
+    except Exception as error:
+        return {
+            "error": "Unable to calculate request metrics",
+            "details": str(error)
+        }
 
 
 # =========================
@@ -218,6 +320,31 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "request_id": ctx.request_id
         }, ctx.request_id)
 
+    def handle_recent_logs(self, ctx):
+        logs = get_recent_logs(limit=10)
+
+        log_request(ctx, 200, "Recent logs requested")
+
+        self.send_json(200, {
+            "endpoint": ctx.endpoint,
+            "data": {
+                "count": len(logs),
+                "logs": logs
+            },
+            "request_id": ctx.request_id
+        }, ctx.request_id)
+
+    def handle_metrics(self, ctx):
+        metrics = get_request_metrics()
+
+        log_request(ctx, 200, "Metrics requested")
+
+        self.send_json(200, {
+            "endpoint": ctx.endpoint,
+            "data": metrics,
+            "request_id": ctx.request_id
+        }, ctx.request_id)
+
     def do_GET(self):
         start_time = time.time()
         request_id = str(uuid.uuid4())
@@ -244,6 +371,8 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
             "/api/v1/events": self.handle_events,
             "/api/v1/devices": self.handle_devices,
+            "/api/v1/logs/recent": self.handle_recent_logs,
+            "/api/v1/metrics": self.handle_metrics,
         }
 
         handler = routes.get(path)
@@ -276,7 +405,6 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "request_id": request_id
             }, request_id)
 
-
 # =========================
 # Server Runner
 # =========================
@@ -297,6 +425,8 @@ def run_server():
     print("  /api/v1/system")
     print("  /api/v1/events")
     print("  /api/v1/devices")
+    print("  /api/v1/logs/recent")
+    print("  /api/v1/metrics")
 
     server.serve_forever()
 

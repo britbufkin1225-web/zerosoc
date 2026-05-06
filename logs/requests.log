@@ -1,0 +1,3 @@
+{"timestamp": "2026-05-06T09:26:20.529764", "request_id": "a0394393-bbe9-4004-8ff3-357c487e6a4e", "method": "GET", "endpoint": "/health", "client_ip": "127.0.0.1", "status_code": 200, "latency_ms": 0.06, "message": "Health check requested"}
+{"timestamp": "2026-05-06T09:26:25.342142", "request_id": "58ecc235-4dc3-4be2-9755-e3c362ab436b", "method": "GET", "endpoint": "/api/v1/events", "client_ip": "127.0.0.1", "status_code": 200, "latency_ms": 0.07, "message": "Events endpoint requested"}
+{"timestamp": "2026-05-06T09:26:29.834723", "request_id": "0ed1032d-49b0-4f93-b3f2-18f76e7b908c", "method": "GET", "endpoint": "/not-real", "client_ip": "127.0.0.1", "status_code": 404, "latency_ms": 0.03, "message": "Endpoint not found"}
