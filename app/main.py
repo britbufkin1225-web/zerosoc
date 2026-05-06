@@ -70,8 +70,9 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "status": "ok",
                 "service": "ZeroSOC",
                 "endpoint": "/status",
-                "system": get_system_info()
-            })
+                "uptime_seconds": round(time.time() - START_TIME, 2),
+                "current_time": datetime.now().isoformat()
+        })
             return
 
         if self.path == "/system":
