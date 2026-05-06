@@ -95,33 +95,39 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
     def do_GET(self):
-        if self.path == "/health":
+        path = self.path
+
+        if path in ["/health", "/api/v1/health"]:
             self.send_json(200, {
                 "status": "ok",
                 "service": APP_NAME,
+                "api_version": API_VERSION,
+                "endpoint": path,
                 "message": "ZeroSOC backend is running",
                 "current_time": datetime.now().isoformat()
             })
             return
 
-        if self.path == "/status":
+        if path in ["/status", "/api/v1/status"]:
             self.send_json(200, {
-                "endpoint": "/status",
+                "endpoint": path,
                 "data": get_status_info()
             })
             return
 
-        if self.path == "/system":
+        if path in ["/system", "/api/v1/system"]:
             self.send_json(200, {
-                "endpoint": "/system",
+                "endpoint": path,
                 "data": get_system_info()
             })
             return
 
         self.send_json(404, {
             "status": "error",
+            "service": APP_NAME,
+            "api_version": API_VERSION,
             "error": "Endpoint not found",
-            "path": self.path
+            "path": path
         })
 
 
@@ -135,12 +141,13 @@ def run_server():
 
     server = HTTPServer((host, port), ZeroSOCHandler)
 
-    print(f"{APP_NAME} backend running at http://{host}:{port}")
     print("Available endpoints:")
     print("  /health")
     print("  /status")
     print("  /system")
-
+    print("  /api/v1/health")
+    print("  /api/v1/status")
+    print("  /api/v1/system")
     server.serve_forever()
 
 
