@@ -83,6 +83,21 @@ def get_system_info():
     }
 
 
+def normalize_route(path):
+    """
+    Normalizes incoming routes so /health and /health/ match the same handler.
+    """
+    if not path:
+        return "/"
+
+    normalized = path.rstrip("/")
+
+    if normalized == "":
+        return "/"
+
+    return normalized
+
+
 # =========================
 # Request Handler
 # =========================
@@ -94,41 +109,76 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
-    def do_GET(self):
-        path = self.path
-
-        if path in ["/health", "/api/v1/health"]:
-            self.send_json(200, {
-                "status": "ok",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "endpoint": path,
-                "message": "ZeroSOC backend is running",
-                "current_time": datetime.now().isoformat()
-            })
-            return
-
-        if path in ["/status", "/api/v1/status"]:
-            self.send_json(200, {
-                "endpoint": path,
-                "data": get_status_info()
-            })
-            return
-
-        if path in ["/system", "/api/v1/system"]:
-            self.send_json(200, {
-                "endpoint": path,
-                "data": get_system_info()
-            })
-            return
-
-        self.send_json(404, {
-            "status": "error",
+    def handle_health(self, path):
+        self.send_json(200, {
+            "status": "ok",
             "service": APP_NAME,
             "api_version": API_VERSION,
-            "error": "Endpoint not found",
-            "path": path
+            "endpoint": path,
+            "message": "ZeroSOC backend is running",
+            "current_time": datetime.now().isoformat()
         })
+
+    def handle_status(self, path):
+        self.send_json(200, {
+            "endpoint": path,
+            "data": get_status_info()
+        })
+
+    def handle_system(self, path):
+        self.send_json(200, {
+            "endpoint": path,
+            "data": get_system_info()
+        })
+
+    def handle_events(self, path):
+        self.send_json(200, {
+            "endpoint": path,
+            "data": {
+                "events": [],
+                "message": "Events endpoint ready. Database integration coming next."
+            }
+        })
+
+    def handle_devices(self, path):
+        self.send_json(200, {
+            "endpoint": path,
+            "data": {
+                "devices": [],
+                "message": "Devices endpoint ready. Network scanner integration coming next."
+            }
+        })
+
+    def do_GET(self):
+        path = normalize_route(self.path)
+
+        routes = {
+            "/health": self.handle_health,
+            "/api/v1/health": self.handle_health,
+
+            "/status": self.handle_status,
+            "/api/v1/status": self.handle_status,
+
+            "/system": self.handle_system,
+            "/api/v1/system": self.handle_system,
+
+            "/api/v1/events": self.handle_events,
+            "/api/v1/devices": self.handle_devices,
+        }
+
+        handler = routes.get(path)
+
+        if handler is None:
+            self.send_json(404, {
+                "status": "error",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "error": "Endpoint not found",
+                "path": path
+            })
+            return
+
+        handler(path)
 
 
 # =========================
@@ -141,6 +191,7 @@ def run_server():
 
     server = HTTPServer((host, port), ZeroSOCHandler)
 
+    print(f"{APP_NAME} backend running at http://{host}:{port}")
     print("Available endpoints:")
     print("  /health")
     print("  /status")
@@ -148,6 +199,9 @@ def run_server():
     print("  /api/v1/health")
     print("  /api/v1/status")
     print("  /api/v1/system")
+    print("  /api/v1/events")
+    print("  /api/v1/devices")
+
     server.serve_forever()
 
 
