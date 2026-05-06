@@ -1,6 +1,12 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import platform
+import sys
+import time
 from datetime import datetime
+
+
+START_TIME = time.time()
 
 
 class ZeroSOCHandler(BaseHTTPRequestHandler):
@@ -19,6 +25,22 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             })
             return
 
+        if self.path == "/status":
+            uptime_seconds = round(time.time() - START_TIME, 2)
+
+            self.send_json(200, {
+                "status": "ok",
+                "service": "ZeroSOC",
+                "system": {
+                    "platform": platform.system(),
+                    "platform_version": platform.version(),
+                    "python_version": sys.version.split()[0],
+                    "uptime_seconds": uptime_seconds,
+                    "current_time": datetime.now().isoformat()
+                }
+            })
+            return
+
         self.send_json(404, {
             "error": "Endpoint not found"
         })
@@ -31,7 +53,9 @@ def run_server():
     server = HTTPServer((host, port), ZeroSOCHandler)
 
     print(f"ZeroSOC backend running at http://{host}:{port}")
-    print("Available endpoint: /health")
+    print("Available endpoints:")
+    print("  /health")
+    print("  /status")
 
     server.serve_forever()
 
