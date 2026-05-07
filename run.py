@@ -9,6 +9,7 @@ import sys
 import logging
 import uuid
 from datetime import datetime
+from urllib.parse import urlparse, parse_qs
 
 
 # =========================
@@ -18,6 +19,14 @@ from datetime import datetime
 APP_NAME = "ZeroSOC"
 API_VERSION = "v1"
 START_TIME = time.time()
+
+
+# =========================
+# In-Memory Security Events
+# =========================
+
+SECURITY_EVENTS = []
+MAX_SECURITY_EVENTS = 100
 
 
 # =========================
@@ -76,6 +85,29 @@ def get_status_info():
         "uptime_seconds": get_uptime_seconds(),
         "current_time": datetime.now().isoformat()
     }
+
+
+def create_security_event(event_type, severity, source, message, metadata=None):
+    """
+    Creates a structured security event and stores it in memory.
+    Keeps only the most recent MAX_SECURITY_EVENTS events.
+    """
+    event = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.now().isoformat(),
+        "event_type": event_type,
+        "severity": severity,
+        "source": source,
+        "message": message,
+        "metadata": metadata or {}
+    }
+
+    SECURITY_EVENTS.append(event)
+
+    if len(SECURITY_EVENTS) > MAX_SECURITY_EVENTS:
+        SECURITY_EVENTS.pop(0)
+
+    return event
 
 
 def get_system_info():
@@ -265,6 +297,26 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
+    def read_json_body(self):
+        """
+        Safely reads and parses a JSON request body.
+        Returns an empty dictionary if the body is missing.
+        Returns None if the body is invalid JSON.
+        """
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+
+            if content_length <= 0:
+                return {}
+
+            body = self.rfile.read(content_length)
+            return json.loads(body.decode("utf-8"))
+
+        except json.JSONDecodeError:
+            return None
+        except Exception:
+            return None
+
     def handle_health(self, ctx):
         log_request(ctx, 200, "Health check requested")
 
@@ -297,13 +349,43 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         }, ctx.request_id)
 
     def handle_events(self, ctx):
-        log_request(ctx, 200, "Events endpoint requested")
+        parsed_path = urlparse(self.path)
+        query_params = parse_qs(parsed_path.query)
+
+        severity_filter = query_params.get("severity", [None])[0]
+        limit = query_params.get("limit", [10])[0]
+
+        try:
+            limit = int(limit)
+        except ValueError:
+            limit = 10
+
+        if limit < 1:
+            limit = 1
+
+        if limit > MAX_SECURITY_EVENTS:
+            limit = MAX_SECURITY_EVENTS
+
+        events = SECURITY_EVENTS
+
+        if severity_filter:
+            events = [
+                event for event in events
+                if event.get("severity") == severity_filter
+            ]
+
+        recent_events = events[-limit:]
+
+        log_request(ctx, 200, "Security events requested")
 
         self.send_json(200, {
             "endpoint": ctx.endpoint,
             "data": {
-                "events": [],
-                "message": "Events endpoint ready. Database integration coming next."
+                "count": len(recent_events),
+                "total_stored": len(SECURITY_EVENTS),
+                "max_stored": MAX_SECURITY_EVENTS,
+                "severity_filter": severity_filter,
+                "events": recent_events
             },
             "request_id": ctx.request_id
         }, ctx.request_id)
@@ -345,10 +427,121 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "request_id": ctx.request_id
         }, ctx.request_id)
 
+    def do_POST(self):
+        start_time = time.time()
+        request_id = str(uuid.uuid4())
+
+        parsed_path = urlparse(self.path)
+        endpoint = normalize_route(parsed_path.path)
+        client_ip = self.client_address[0]
+
+        ctx = RequestContext(
+            request_id=request_id,
+            method="POST",
+            endpoint=endpoint,
+            client_ip=client_ip,
+            start_time=start_time
+        )
+
+        if endpoint == "/api/v1/events":
+            body = self.read_json_body()
+
+            if body is None:
+                log_request(ctx, 400, "Invalid JSON body")
+
+                self.send_json(400, {
+                    "status": "error",
+                    "service": APP_NAME,
+                    "api_version": API_VERSION,
+                    "error": "Invalid JSON body",
+                    "request_id": request_id
+                }, request_id)
+                return
+
+            event_type = body.get("event_type")
+            severity = body.get("severity", "low")
+            source = body.get("source", client_ip)
+            message = body.get("message")
+            metadata = body.get("metadata", {})
+
+            if not event_type or not message:
+                log_request(ctx, 400, "Missing required event fields")
+
+                self.send_json(400, {
+                    "status": "error",
+                    "service": APP_NAME,
+                    "api_version": API_VERSION,
+                    "error": "Missing required fields",
+                    "required": ["event_type", "message"],
+                    "optional": ["severity", "source", "metadata"],
+                    "request_id": request_id
+                }, request_id)
+                return
+
+            allowed_severities = ["low", "medium", "high", "critical"]
+
+            if severity not in allowed_severities:
+                log_request(ctx, 400, f"Invalid severity: {severity}")
+
+                self.send_json(400, {
+                    "status": "error",
+                    "service": APP_NAME,
+                    "api_version": API_VERSION,
+                    "error": "Invalid severity",
+                    "allowed": allowed_severities,
+                    "request_id": request_id
+                }, request_id)
+                return
+
+            if not isinstance(metadata, dict):
+                log_request(ctx, 400, "Invalid metadata format")
+
+                self.send_json(400, {
+                    "status": "error",
+                    "service": APP_NAME,
+                    "api_version": API_VERSION,
+                    "error": "metadata must be a JSON object",
+                    "request_id": request_id
+                }, request_id)
+                return
+
+            event = create_security_event(
+                event_type=event_type,
+                severity=severity,
+                source=source,
+                message=message,
+                metadata=metadata
+            )
+
+            log_request(ctx, 201, f"Security event created: {event_type}")
+
+            self.send_json(201, {
+                "status": "created",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "message": "Security event created",
+                "event": event,
+                "request_id": request_id
+            }, request_id)
+            return
+
+        log_request(ctx, 404, "POST endpoint not found")
+
+        self.send_json(404, {
+            "status": "error",
+            "service": APP_NAME,
+            "api_version": API_VERSION,
+            "error": "Endpoint not found",
+            "path": endpoint,
+            "request_id": request_id
+        }, request_id)
+
     def do_GET(self):
         start_time = time.time()
         request_id = str(uuid.uuid4())
-        path = normalize_route(self.path)
+
+        parsed_path = urlparse(self.path)
+        path = normalize_route(parsed_path.path)
         client_ip = self.client_address[0]
 
         ctx = RequestContext(
@@ -402,8 +595,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "api_version": API_VERSION,
                 "error": "Internal server error",
                 "path": path,
+                "details": str(error),
                 "request_id": request_id
             }, request_id)
+
 
 # =========================
 # Server Runner
