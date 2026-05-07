@@ -1,15 +1,15 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 import json
 import os
 import time
+import logging
+import uuid
 import platform
 import socket
 import shutil
 import sys
-import logging
-import uuid
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs
 
 
 # =========================
@@ -19,6 +19,24 @@ from urllib.parse import urlparse, parse_qs
 APP_NAME = "ZeroSOC"
 API_VERSION = "v1"
 START_TIME = time.time()
+
+
+# =========================
+# API Key Authentication
+# =========================
+
+API_KEY = os.getenv("ZEROSOC_API_KEY", "dev-zero-soc-key")
+API_KEY_HEADER = "X-API-Key"
+
+PROTECTED_ENDPOINTS = {
+    "/api/v1/system",
+    "/api/v1/logs",
+    "/api/v1/logs/recent",
+    "/api/v1/events",
+    "/api/v1/events/summary",
+    "/api/v1/devices",
+    "/api/v1/metrics"
+}
 
 
 # =========================
@@ -45,6 +63,25 @@ if not request_logger.handlers:
     file_handler = logging.FileHandler(REQUEST_LOG_FILE, encoding="utf-8")
     file_handler.setFormatter(logging.Formatter("%(message)s"))
     request_logger.addHandler(file_handler)
+
+
+# =========================
+# Auth Helpers
+# =========================
+
+def is_authorized(headers):
+    """
+    Checks whether the request includes the correct API key.
+
+    Expected header:
+    X-API-Key: dev-zero-soc-key
+    """
+    provided_key = headers.get(API_KEY_HEADER)
+
+    if provided_key is None:
+        return False
+
+    return provided_key == API_KEY
 
 
 # =========================
@@ -76,7 +113,6 @@ def get_uptime_seconds():
 def get_status_info():
     """
     Lightweight service status.
-    This is for checking if the backend service is alive.
     """
     return {
         "status": "ok",
@@ -87,33 +123,9 @@ def get_status_info():
     }
 
 
-def create_security_event(event_type, severity, source, message, metadata=None):
-    """
-    Creates a structured security event and stores it in memory.
-    Keeps only the most recent MAX_SECURITY_EVENTS events.
-    """
-    event = {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now().isoformat(),
-        "event_type": event_type,
-        "severity": severity,
-        "source": source,
-        "message": message,
-        "metadata": metadata or {}
-    }
-
-    SECURITY_EVENTS.append(event)
-
-    if len(SECURITY_EVENTS) > MAX_SECURITY_EVENTS:
-        SECURITY_EVENTS.pop(0)
-
-    return event
-
-
 def get_system_info():
     """
     Deeper host/machine health information.
-    This is heavier than /status and belongs under /system.
     """
     total, used, free = shutil.disk_usage("/")
 
@@ -134,6 +146,246 @@ def get_system_info():
         }
     }
 
+
+# =========================
+# Security Event Helpers
+# =========================
+
+def auto_tag_event(event):
+    """
+    Automatically assigns security tags based on event content.
+    """
+    tags = set()
+
+    event_type = str(event.get("event_type", "")).lower()
+    severity = str(event.get("severity", "")).lower()
+    source = str(event.get("source", "")).lower()
+    message = str(event.get("message", "")).lower()
+
+    combined_text = f"{event_type} {severity} {source} {message}"
+
+    if severity in ["critical", "high"]:
+        tags.add("high-priority")
+        tags.add("needs-review")
+
+    if severity == "critical":
+        tags.add("critical-severity")
+
+    if severity == "high":
+        tags.add("high-severity")
+
+    if severity == "medium":
+        tags.add("medium-severity")
+
+    if severity == "low":
+        tags.add("low-severity")
+
+    auth_keywords = [
+        "login",
+        "logon",
+        "authentication",
+        "auth",
+        "password",
+        "credential",
+        "credentials",
+        "signin",
+        "sign-in"
+    ]
+
+    failed_keywords = [
+        "failed",
+        "failure",
+        "invalid",
+        "denied",
+        "unauthorized",
+        "bad password"
+    ]
+
+    if any(keyword in combined_text for keyword in auth_keywords):
+        tags.add("authentication")
+
+    if any(keyword in combined_text for keyword in failed_keywords):
+        tags.add("failed-attempt")
+
+    if (
+        any(keyword in combined_text for keyword in auth_keywords)
+        and any(keyword in combined_text for keyword in failed_keywords)
+    ):
+        tags.add("failed-login")
+        tags.add("suspicious")
+
+    network_keywords = [
+        "port",
+        "scan",
+        "nmap",
+        "connection",
+        "packet",
+        "firewall",
+        "ssh",
+        "http",
+        "https",
+        "tcp",
+        "udp"
+    ]
+
+    if any(keyword in combined_text for keyword in network_keywords):
+        tags.add("network")
+
+    if "scan" in combined_text or "nmap" in combined_text:
+        tags.add("possible-recon")
+        tags.add("suspicious")
+
+    if "ssh" in combined_text:
+        tags.add("ssh")
+
+    if "firewall" in combined_text:
+        tags.add("firewall")
+
+    malware_keywords = [
+        "malware",
+        "virus",
+        "trojan",
+        "ransomware",
+        "payload",
+        "backdoor",
+        "exploit",
+        "shell",
+        "reverse shell"
+    ]
+
+    if any(keyword in combined_text for keyword in malware_keywords):
+        tags.add("malware-related")
+        tags.add("threat")
+        tags.add("needs-review")
+
+    if "ransomware" in combined_text:
+        tags.add("ransomware")
+
+    if "reverse shell" in combined_text:
+        tags.add("reverse-shell")
+        tags.add("critical-signal")
+
+    system_keywords = [
+        "cpu",
+        "memory",
+        "disk",
+        "temperature",
+        "system",
+        "uptime",
+        "service",
+        "process"
+    ]
+
+    if any(keyword in combined_text for keyword in system_keywords):
+        tags.add("system")
+
+    if "temperature" in combined_text or "cpu temp" in combined_text:
+        tags.add("hardware-health")
+
+    if "disk" in combined_text:
+        tags.add("storage")
+
+    if source:
+        tags.add(f"source:{source}")
+
+    if event_type:
+        tags.add(f"type:{event_type}")
+
+    return sorted(tags)
+
+
+def create_security_event(event_type, severity, source, message, metadata=None):
+    """
+    Creates a structured security event and stores it in memory.
+    """
+    event = {
+        "id": str(uuid.uuid4()),
+        "timestamp": datetime.now().isoformat(),
+        "event_type": event_type,
+        "severity": severity,
+        "source": source,
+        "message": message,
+        "metadata": metadata or {}
+    }
+
+    event["tags"] = auto_tag_event(event)
+
+    SECURITY_EVENTS.append(event)
+
+    if len(SECURITY_EVENTS) > MAX_SECURITY_EVENTS:
+        SECURITY_EVENTS.pop(0)
+
+    return event
+
+
+def get_security_event_summary():
+    severity_counts = {}
+    source_counts = {}
+    tag_counts = {}
+
+    for event in SECURITY_EVENTS:
+        severity = event.get("severity", "unknown")
+        source = event.get("source", "unknown")
+        tags = event.get("tags", [])
+
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        source_counts[source] = source_counts.get(source, 0) + 1
+
+        for tag in tags:
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    return {
+        "total_events": len(SECURITY_EVENTS),
+        "severity_counts": severity_counts,
+        "source_counts": source_counts,
+        "tag_counts": tag_counts
+    }
+
+
+def get_filtered_security_events(query_params):
+    events = SECURITY_EVENTS.copy()
+
+    severity_filter = query_params.get("severity", [None])[0]
+    type_filter = query_params.get("type", [None])[0]
+    limit_raw = query_params.get("limit", ["10"])[0]
+
+    if severity_filter:
+        events = [
+            event for event in events
+            if event.get("severity", "").lower() == severity_filter.lower()
+        ]
+
+    if type_filter:
+        events = [
+            event for event in events
+            if event.get("event_type", "").lower() == type_filter.lower()
+        ]
+
+    try:
+        limit = int(limit_raw)
+    except ValueError:
+        limit = 10
+
+    if limit < 1:
+        limit = 10
+
+    if limit > MAX_SECURITY_EVENTS:
+        limit = MAX_SECURITY_EVENTS
+
+    return {
+        "count": len(events),
+        "limit": limit,
+        "filters": {
+            "severity": severity_filter,
+            "type": type_filter
+        },
+        "events": events[-limit:]
+    }
+
+
+# =========================
+# Route Helpers
+# =========================
 
 def normalize_route(path):
     """
@@ -181,10 +433,6 @@ def log_request(ctx, status_code, message):
 
 
 def get_recent_logs(limit=10):
-    """
-    Reads the most recent structured request logs.
-    Returns an empty list if the log file does not exist yet.
-    """
     if not os.path.exists(REQUEST_LOG_FILE):
         return []
 
@@ -219,9 +467,6 @@ def get_recent_logs(limit=10):
 
 
 def get_request_metrics():
-    """
-    Builds basic request metrics from the structured request log file.
-    """
     if not os.path.exists(REQUEST_LOG_FILE):
         return {
             "total_requests_logged": 0,
@@ -298,11 +543,6 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
 
     def read_json_body(self):
-        """
-        Safely reads and parses a JSON request body.
-        Returns an empty dictionary if the body is missing.
-        Returns None if the body is invalid JSON.
-        """
         try:
             content_length = int(self.headers.get("Content-Length", 0))
 
@@ -316,6 +556,29 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             return None
         except Exception:
             return None
+
+    def reject_unauthorized(self, ctx):
+        log_request(ctx, 401, "Unauthorized request blocked")
+
+        create_security_event(
+            event_type="unauthorized_request",
+            severity="medium",
+            source=ctx.client_ip,
+            message=f"Unauthorized request blocked for endpoint: {ctx.endpoint}",
+            metadata={
+                "method": ctx.method,
+                "endpoint": ctx.endpoint
+            }
+        )
+
+        self.send_json(401, {
+            "status": "error",
+            "service": APP_NAME,
+            "api_version": API_VERSION,
+            "error": "Unauthorized",
+            "message": "Missing or invalid API key",
+            "request_id": ctx.request_id
+        }, ctx.request_id)
 
     def handle_health(self, ctx):
         log_request(ctx, 200, "Health check requested")
@@ -351,42 +614,28 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
     def handle_events(self, ctx):
         parsed_path = urlparse(self.path)
         query_params = parse_qs(parsed_path.query)
-
-        severity_filter = query_params.get("severity", [None])[0]
-        limit = query_params.get("limit", [10])[0]
-
-        try:
-            limit = int(limit)
-        except ValueError:
-            limit = 10
-
-        if limit < 1:
-            limit = 1
-
-        if limit > MAX_SECURITY_EVENTS:
-            limit = MAX_SECURITY_EVENTS
-
-        events = SECURITY_EVENTS
-
-        if severity_filter:
-            events = [
-                event for event in events
-                if event.get("severity") == severity_filter
-            ]
-
-        recent_events = events[-limit:]
+        events_response = get_filtered_security_events(query_params)
 
         log_request(ctx, 200, "Security events requested")
 
         self.send_json(200, {
             "endpoint": ctx.endpoint,
             "data": {
-                "count": len(recent_events),
                 "total_stored": len(SECURITY_EVENTS),
                 "max_stored": MAX_SECURITY_EVENTS,
-                "severity_filter": severity_filter,
-                "events": recent_events
+                **events_response
             },
+            "request_id": ctx.request_id
+        }, ctx.request_id)
+
+    def handle_events_summary(self, ctx):
+        summary = get_security_event_summary()
+
+        log_request(ctx, 200, "Security event summary requested")
+
+        self.send_json(200, {
+            "endpoint": ctx.endpoint,
+            "data": summary,
             "request_id": ctx.request_id
         }, ctx.request_id)
 
@@ -427,6 +676,85 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "request_id": ctx.request_id
         }, ctx.request_id)
 
+    def do_GET(self):
+        start_time = time.time()
+        request_id = str(uuid.uuid4())
+
+        parsed_path = urlparse(self.path)
+        endpoint = normalize_route(parsed_path.path)
+        client_ip = self.client_address[0]
+
+        ctx = RequestContext(
+            request_id=request_id,
+            method="GET",
+            endpoint=endpoint,
+            client_ip=client_ip,
+            start_time=start_time
+        )
+
+        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
+            self.reject_unauthorized(ctx)
+            return
+
+        routes = {
+            "/health": self.handle_health,
+            "/api/v1/health": self.handle_health,
+
+            "/status": self.handle_status,
+            "/api/v1/status": self.handle_status,
+
+            "/system": self.handle_system,
+            "/api/v1/system": self.handle_system,
+
+            "/api/v1/events": self.handle_events,
+            "/api/v1/events/summary": self.handle_events_summary,
+            "/api/v1/devices": self.handle_devices,
+            "/api/v1/logs/recent": self.handle_recent_logs,
+            "/api/v1/metrics": self.handle_metrics,
+        }
+
+        handler = routes.get(endpoint)
+
+        if handler is None:
+            log_request(ctx, 404, "Endpoint not found")
+
+            create_security_event(
+                event_type="unknown_endpoint",
+                severity="low",
+                source=client_ip,
+                message=f"Unknown GET endpoint requested: {endpoint}",
+                metadata={
+                    "method": "GET",
+                    "path": endpoint
+                }
+            )
+
+            self.send_json(404, {
+                "status": "error",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "error": "Endpoint not found",
+                "path": endpoint,
+                "request_id": request_id
+            }, request_id)
+            return
+
+        try:
+            handler(ctx)
+
+        except Exception as error:
+            log_request(ctx, 500, f"Internal server error: {str(error)}")
+
+            self.send_json(500, {
+                "status": "error",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "error": "Internal server error",
+                "path": endpoint,
+                "details": str(error),
+                "request_id": request_id
+            }, request_id)
+
     def do_POST(self):
         start_time = time.time()
         request_id = str(uuid.uuid4())
@@ -442,6 +770,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             client_ip=client_ip,
             start_time=start_time
         )
+
+        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
+            self.reject_unauthorized(ctx)
+            return
 
         if endpoint == "/api/v1/events":
             body = self.read_json_body()
@@ -479,6 +811,7 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 return
 
             allowed_severities = ["low", "medium", "high", "critical"]
+            severity = str(severity).lower()
 
             if severity not in allowed_severities:
                 log_request(ctx, 400, f"Invalid severity: {severity}")
@@ -527,6 +860,17 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
         log_request(ctx, 404, "POST endpoint not found")
 
+        create_security_event(
+            event_type="unknown_post_endpoint",
+            severity="low",
+            source=client_ip,
+            message=f"Unknown POST endpoint requested: {endpoint}",
+            metadata={
+                "method": "POST",
+                "path": endpoint
+            }
+        )
+
         self.send_json(404, {
             "status": "error",
             "service": APP_NAME,
@@ -535,69 +879,6 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "path": endpoint,
             "request_id": request_id
         }, request_id)
-
-    def do_GET(self):
-        start_time = time.time()
-        request_id = str(uuid.uuid4())
-
-        parsed_path = urlparse(self.path)
-        path = normalize_route(parsed_path.path)
-        client_ip = self.client_address[0]
-
-        ctx = RequestContext(
-            request_id=request_id,
-            method="GET",
-            endpoint=path,
-            client_ip=client_ip,
-            start_time=start_time
-        )
-
-        routes = {
-            "/health": self.handle_health,
-            "/api/v1/health": self.handle_health,
-
-            "/status": self.handle_status,
-            "/api/v1/status": self.handle_status,
-
-            "/system": self.handle_system,
-            "/api/v1/system": self.handle_system,
-
-            "/api/v1/events": self.handle_events,
-            "/api/v1/devices": self.handle_devices,
-            "/api/v1/logs/recent": self.handle_recent_logs,
-            "/api/v1/metrics": self.handle_metrics,
-        }
-
-        handler = routes.get(path)
-
-        if handler is None:
-            log_request(ctx, 404, "Endpoint not found")
-
-            self.send_json(404, {
-                "status": "error",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "error": "Endpoint not found",
-                "path": path,
-                "request_id": request_id
-            }, request_id)
-            return
-
-        try:
-            handler(ctx)
-
-        except Exception as error:
-            log_request(ctx, 500, f"Internal server error: {str(error)}")
-
-            self.send_json(500, {
-                "status": "error",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "error": "Internal server error",
-                "path": path,
-                "details": str(error),
-                "request_id": request_id
-            }, request_id)
 
 
 # =========================
@@ -619,9 +900,13 @@ def run_server():
     print("  /api/v1/status")
     print("  /api/v1/system")
     print("  /api/v1/events")
+    print("  /api/v1/events/summary")
     print("  /api/v1/devices")
     print("  /api/v1/logs/recent")
     print("  /api/v1/metrics")
+    print("")
+    print("Protected endpoints require header:")
+    print(f"  {API_KEY_HEADER}: {API_KEY}")
 
     server.serve_forever()
 
