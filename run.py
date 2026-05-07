@@ -9,6 +9,7 @@ import platform
 import socket
 import shutil
 import sys
+import sqlite3
 from datetime import datetime
 
 
@@ -19,6 +20,14 @@ from datetime import datetime
 APP_NAME = "ZeroSOC"
 API_VERSION = "v1"
 START_TIME = time.time()
+
+
+# =========================
+# Database Setup
+# =========================
+
+DATA_DIR = "data"
+DB_FILE = os.path.join(DATA_DIR, "zerosoc.db")
 
 
 # =========================
@@ -37,14 +46,6 @@ PROTECTED_ENDPOINTS = {
     "/api/v1/devices",
     "/api/v1/metrics"
 }
-
-
-# =========================
-# In-Memory Security Events
-# =========================
-
-SECURITY_EVENTS = []
-MAX_SECURITY_EVENTS = 100
 
 
 # =========================
@@ -122,6 +123,129 @@ def get_status_info():
         "current_time": datetime.now().isoformat()
     }
 
+def get_db_connection():
+    """
+    Opens a connection to the SQLite database.
+    """
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+
+    return conn
+
+
+def init_database():
+    """
+    Creates required database tables if they do not already exist.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS security_events (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            source_ip TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            tag TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def save_security_event(event):
+    """
+    Saves a security event to the SQLite database.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO security_events (
+            id,
+            timestamp,
+            source_ip,
+            event_type,
+            severity,
+            message,
+            tag
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        event["id"],
+        event["timestamp"],
+        event["source"],
+        event["event_type"],
+        event["severity"],
+        event["message"],
+        ",".join(event["tags"])
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_security_events(limit=50, severity=None, tag=None):
+    """
+    Reads security events from the SQLite database.
+    Supports optional filtering by severity and tag.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT
+            id,
+            timestamp,
+            source_ip,
+            event_type,
+            severity,
+            message,
+            tag
+        FROM security_events
+    """
+
+    filters = []
+    params = []
+
+    if severity:
+        filters.append("severity = ?")
+        params.append(severity)
+
+    if tag:
+        filters.append("tag = ?")
+        params.append(tag)
+
+    if filters:
+        query += " WHERE " + " AND ".join(filters)
+
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+
+    events = []
+
+    for row in rows:
+        events.append({
+             "id": row["id"],
+             "timestamp": row["timestamp"],
+             "source_ip": row["source_ip"],
+             "event_type": row["event_type"],
+             "severity": row["severity"],
+             "message": row["message"],
+             "tags": row["tag"].split(",") if row["tag"] else []
+   })
+
+    conn.close()
+
+    return events
 
 def get_system_info():
     """
@@ -296,7 +420,7 @@ def auto_tag_event(event):
 
 def create_security_event(event_type, severity, source, message, metadata=None):
     """
-    Creates a structured security event and stores it in memory.
+    Creates a structured security event and stores it in SQLite.
     """
     event = {
         "id": str(uuid.uuid4()),
@@ -310,76 +434,59 @@ def create_security_event(event_type, severity, source, message, metadata=None):
 
     event["tags"] = auto_tag_event(event)
 
-    SECURITY_EVENTS.append(event)
-
-    if len(SECURITY_EVENTS) > MAX_SECURITY_EVENTS:
-        SECURITY_EVENTS.pop(0)
+    save_security_event(event)
 
     return event
 
 
 def get_security_event_summary():
+    """
+    Builds a security event summary from SQLite.
+    """
     severity_counts = {}
     source_counts = {}
     tag_counts = {}
+    event_type_counts = {}
 
-    for event in SECURITY_EVENTS:
-        severity = event.get("severity", "unknown")
-        source = event.get("source", "unknown")
-        tags = event.get("tags", [])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            source_ip,
+            event_type,
+            severity,
+            tag
+        FROM security_events
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    for row in rows:
+        severity = row["severity"] or "unknown"
+        source_ip = row["source_ip"] or "unknown"
+        event_type = row["event_type"] or "unknown"
+        tags = row["tag"].split(",") if row["tag"] else []
 
         severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        source_counts[source] = source_counts.get(source, 0) + 1
+        source_counts[source_ip] = source_counts.get(source_ip, 0) + 1
+        event_type_counts[event_type] = event_type_counts.get(event_type, 0) + 1
 
         for tag in tags:
+            tag = tag.strip()
+
+            if not tag:
+                continue
+
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
 
     return {
-        "total_events": len(SECURITY_EVENTS),
+        "total_events": len(rows),
         "severity_counts": severity_counts,
         "source_counts": source_counts,
+        "event_type_counts": event_type_counts,
         "tag_counts": tag_counts
-    }
-
-
-def get_filtered_security_events(query_params):
-    events = SECURITY_EVENTS.copy()
-
-    severity_filter = query_params.get("severity", [None])[0]
-    type_filter = query_params.get("type", [None])[0]
-    limit_raw = query_params.get("limit", ["10"])[0]
-
-    if severity_filter:
-        events = [
-            event for event in events
-            if event.get("severity", "").lower() == severity_filter.lower()
-        ]
-
-    if type_filter:
-        events = [
-            event for event in events
-            if event.get("event_type", "").lower() == type_filter.lower()
-        ]
-
-    try:
-        limit = int(limit_raw)
-    except ValueError:
-        limit = 10
-
-    if limit < 1:
-        limit = 10
-
-    if limit > MAX_SECURITY_EVENTS:
-        limit = MAX_SECURITY_EVENTS
-
-    return {
-        "count": len(events),
-        "limit": limit,
-        "filters": {
-            "severity": severity_filter,
-            "type": type_filter
-        },
-        "events": events[-limit:]
     }
 
 
@@ -614,16 +721,40 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
     def handle_events(self, ctx):
         parsed_path = urlparse(self.path)
         query_params = parse_qs(parsed_path.query)
-        events_response = get_filtered_security_events(query_params)
 
-        log_request(ctx, 200, "Security events requested")
+        severity = query_params.get("severity", [None])[0]
+        tag = query_params.get("tag", [None])[0]
+        limit_raw = query_params.get("limit", ["50"])[0]
+
+        try:
+            limit = int(limit_raw)
+        except ValueError:
+            limit = 50
+
+        if limit < 1:
+            limit = 50
+
+        if limit > 100:
+            limit = 100
+
+        events = get_security_events(
+            limit=limit,
+            severity=severity,
+            tag=tag
+        )
+
+        log_request(ctx, 200, "Security events requested from SQLite")
 
         self.send_json(200, {
             "endpoint": ctx.endpoint,
             "data": {
-                "total_stored": len(SECURITY_EVENTS),
-                "max_stored": MAX_SECURITY_EVENTS,
-                **events_response
+                "count": len(events),
+                "limit": limit,
+                "filters": {
+                    "severity": severity,
+                    "tag": tag
+                },
+                "events": events
             },
             "request_id": ctx.request_id
         }, ctx.request_id)
@@ -912,4 +1043,9 @@ def run_server():
 
 
 if __name__ == "__main__":
-    run_server()
+    init_database()
+
+    server = HTTPServer(("0.0.0.0", 8000), ZeroSOCHandler)
+    print("ZeroSOC backend running on http://0.0.0.0:8000")
+    print(f"SQLite database: {DB_FILE}")
+    server.serve_forever()
