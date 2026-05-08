@@ -10,6 +10,8 @@ import socket
 import shutil
 import sys
 import sqlite3
+import subprocess
+import ipaddress
 from datetime import datetime
 
 
@@ -20,6 +22,14 @@ from datetime import datetime
 APP_NAME = "ZeroSOC"
 API_VERSION = "v1"
 START_TIME = time.time()
+
+
+# =========================
+# Network Scanner Settings
+# =========================
+
+SCAN_TIMEOUT_SECONDS = 1
+MAX_SCAN_HOSTS = 254
 
 
 # =========================
@@ -151,6 +161,18 @@ def init_database():
             severity TEXT NOT NULL,
             message TEXT NOT NULL,
             tag TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS network_devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip_address TEXT NOT NULL UNIQUE,
+            hostname TEXT,
+            status TEXT NOT NULL,
+            mac_address TEXT,
+            first_seen TEXT NOT NULL,
+            last_seen TEXT NOT NULL
         )
     """)
 
@@ -489,6 +511,217 @@ def get_security_event_summary():
         "tag_counts": tag_counts
     }
 
+# =========================
+# Network Scanner Helpers
+# =========================
+
+def get_local_ip():
+    """
+    Finds the local IP address of the machine running ZeroSOC.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
+def get_local_network():
+    """
+    Builds a /24 network range from the local IP.
+    Example:
+    192.168.1.45 -> 192.168.1.0/24
+    """
+    local_ip = get_local_ip()
+
+    if local_ip == "127.0.0.1":
+        return None
+
+    network = ipaddress.ip_network(f"{local_ip}/24", strict=False)
+    return network
+
+
+def ping_host(ip_address):
+    """
+    Pings one host and returns True if it responds.
+    Works on Windows, Linux, macOS, and Raspberry Pi OS.
+    """
+    system_name = platform.system().lower()
+
+    if system_name == "windows":
+        command = [
+            "ping",
+            "-n",
+            "1",
+            "-w",
+            str(SCAN_TIMEOUT_SECONDS * 1000),
+            ip_address
+        ]
+    else:
+        command = [
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            str(SCAN_TIMEOUT_SECONDS),
+            ip_address
+        ]
+
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def get_hostname_for_ip(ip_address):
+    """
+    Attempts to resolve a hostname from an IP address.
+    Returns None if unavailable.
+    """
+    try:
+        hostname, _, _ = socket.gethostbyaddr(ip_address)
+        return hostname
+    except Exception:
+        return None
+
+
+def scan_network():
+    """
+    Scans the local /24 network and returns active devices.
+    """
+    network = get_local_network()
+
+    if network is None:
+        return {
+            "error": "Unable to determine local network",
+            "devices": []
+        }
+
+    devices = []
+
+    for host in list(network.hosts())[:MAX_SCAN_HOSTS]:
+        ip_address = str(host)
+
+        if ping_host(ip_address):
+            hostname = get_hostname_for_ip(ip_address)
+
+            devices.append({
+                "ip_address": ip_address,
+                "hostname": hostname,
+                "status": "online",
+                "mac_address": None,
+                "last_seen": datetime.now().isoformat()
+            })
+
+    return {
+        "network": str(network),
+        "device_count": len(devices),
+        "devices": devices
+    }
+
+
+def save_network_devices(devices):
+    """
+    Saves discovered devices to SQLite.
+    If the device already exists, updates last_seen.
+    """
+    now = datetime.now().isoformat()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    for device in devices:
+        ip_address = device.get("ip_address")
+        hostname = device.get("hostname")
+        status = device.get("status", "online")
+        mac_address = device.get("mac_address")
+
+        cursor.execute(
+            "SELECT id FROM network_devices WHERE ip_address = ?",
+            (ip_address,)
+        )
+
+        existing_device = cursor.fetchone()
+
+        if existing_device:
+            cursor.execute("""
+                UPDATE network_devices
+                SET hostname = ?, status = ?, mac_address = ?, last_seen = ?
+                WHERE ip_address = ?
+            """, (
+                hostname,
+                status,
+                mac_address,
+                now,
+                ip_address
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO network_devices (
+                    ip_address,
+                    hostname,
+                    status,
+                    mac_address,
+                    first_seen,
+                    last_seen
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                ip_address,
+                hostname,
+                status,
+                mac_address,
+                now,
+                now
+            ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_recent_network_devices(limit=50):
+    """
+    Returns recently seen network devices from SQLite.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            ip_address,
+            hostname,
+            status,
+            mac_address,
+            first_seen,
+            last_seen
+        FROM network_devices
+        ORDER BY last_seen DESC
+        LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    devices = []
+
+    for row in rows:
+        devices.append({
+            "ip_address": row["ip_address"],
+            "hostname": row["hostname"],
+            "status": row["status"],
+            "mac_address": row["mac_address"],
+            "first_seen": row["first_seen"],
+            "last_seen": row["last_seen"]
+        })
+
+    return devices
 
 # =========================
 # Route Helpers
@@ -771,17 +1004,45 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         }, ctx.request_id)
 
     def handle_devices(self, ctx):
-        log_request(ctx, 200, "Devices endpoint requested")
+        parsed_path = urlparse(self.path)
+        query_params = parse_qs(parsed_path.query)
+
+        scan_requested = query_params.get("scan", ["false"])[0].lower() == "true"
+
+        if scan_requested:
+            scan_result = scan_network()
+
+            if "error" not in scan_result:
+                save_network_devices(scan_result["devices"])
+
+            log_request(ctx, 200, "Network device scan completed")
+
+            self.send_json(200, {
+                "endpoint": ctx.endpoint,
+                "data": {
+                    "scan_performed": True,
+                    "network": scan_result.get("network"),
+                    "device_count": scan_result.get("device_count", 0),
+                    "devices": scan_result.get("devices", []),
+                    "error": scan_result.get("error")
+                },
+                "request_id": ctx.request_id
+            }, ctx.request_id)
+            return
+
+        devices = get_recent_network_devices()
+
+        log_request(ctx, 200, "Network devices retrieved from SQLite")
 
         self.send_json(200, {
             "endpoint": ctx.endpoint,
             "data": {
-                "devices": [],
-                "message": "Devices endpoint ready. Network scanner integration coming next."
+                "scan_performed": False,
+                "device_count": len(devices),
+                "devices": devices
             },
             "request_id": ctx.request_id
         }, ctx.request_id)
-
     def handle_recent_logs(self, ctx):
         logs = get_recent_logs(limit=10)
 
