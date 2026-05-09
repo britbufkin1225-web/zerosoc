@@ -110,3 +110,41 @@ Initial project setup in progress.
 - [ ] Add setup guide
 - [ ] Add API documentation
 - [ ] Add final project demo
+
+## Current Project Status
+
+ZeroSOC currently includes a lightweight Python backend API with service health, status, and system visibility endpoints.
+
+### Completed
+
+- [x] Created GitHub repository
+- [x] Added initial project structure
+- [x] Built lightweight Python HTTP server
+- [x] Added JSON API responses
+- [x] Added `/health` endpoint
+- [x] Added `/status` endpoint
+- [x] Added `/system` endpoint
+- [x] Split lightweight service status from deeper system health
+- [x] Added Raspberry Pi-compatible CPU temperature support
+- [x] Added API versioning
+- [x] Added `/api/v1/health`
+- [x] Added `/api/v1/status`
+- [x] Added `/api/v1/system`
+- [x] Preserved legacy routes
+
+### Current Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `/health` | Basic alive check |
+| `/status` | Lightweight service status |
+| `/system` | Host system health |
+| `/api/v1/health` | Versioned alive check |
+| `/api/v1/status` | Versioned service status |
+| `/api/v1/system` | Versioned host system health |
+
+### Next Planned Upgrade
+
+- [ ] Refactor route handling
+- [ ] Add centralized JSON responses
+- [ ] Prepare for security event logging
