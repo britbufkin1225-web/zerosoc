@@ -26,6 +26,7 @@ data/*.db
 Thumbs.db
 .vscode/
 .idea/
+.snapshots/
 
 # Test/cache files
 .pytest_cache/
