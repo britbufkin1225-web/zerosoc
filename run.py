@@ -218,6 +218,14 @@ def get_security_events(limit=50, severity=None, tag=None):
     Reads security events from the SQLite database.
     Supports optional filtering by severity and tag.
     """
+
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 50
+
+    limit = max(1, min(limit, 100))
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -257,18 +265,100 @@ def get_security_events(limit=50, severity=None, tag=None):
 
     for row in rows:
         events.append({
-             "id": row["id"],
-             "timestamp": row["timestamp"],
-             "source_ip": row["source_ip"],
-             "event_type": row["event_type"],
-             "severity": row["severity"],
-             "message": row["message"],
-             "tags": row["tag"].split(",") if row["tag"] else []
-   })
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "source_ip": row["source_ip"],
+            "event_type": row["event_type"],
+            "severity": row["severity"],
+            "message": row["message"],
+            "tags": row["tag"].split(",") if row["tag"] else []
+        })
 
     conn.close()
 
     return events
+
+def get_events_summary():
+    """
+    Builds a summary of stored security events.
+    Returns total events, counts by severity, counts by event type,
+    counts by individual tag, and latest event.
+    """
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    summary = {
+        "total_events": 0,
+        "by_severity": {},
+        "by_event_type": {},
+        "by_tag": {},
+        "latest_event": None
+    }
+
+    try:
+        # Total event count
+        cursor.execute("SELECT COUNT(*) AS total FROM security_events")
+        row = cursor.fetchone()
+        summary["total_events"] = row["total"] if row else 0
+
+        # Count by severity
+        cursor.execute("""
+            SELECT severity, COUNT(*) AS count
+            FROM security_events
+            GROUP BY severity
+        """)
+        for row in cursor.fetchall():
+            severity = row["severity"] or "unknown"
+            summary["by_severity"][severity] = row["count"]
+
+        # Count by event type
+        cursor.execute("""
+            SELECT event_type, COUNT(*) AS count
+            FROM security_events
+            GROUP BY event_type
+        """)
+        for row in cursor.fetchall():
+            event_type = row["event_type"] or "unknown"
+            summary["by_event_type"][event_type] = row["count"]
+
+        # Count individual tags
+        cursor.execute("""
+            SELECT tag
+            FROM security_events
+            WHERE tag IS NOT NULL AND tag != ''
+        """)
+        for row in cursor.fetchall():
+            raw_tag = row["tag"]
+
+            tags = [tag.strip() for tag in raw_tag.split(",") if tag.strip()]
+
+            for tag in tags:
+                summary["by_tag"][tag] = summary["by_tag"].get(tag, 0) + 1
+
+        # Latest event
+        cursor.execute("""
+            SELECT id, timestamp, event_type, severity, tag, message
+            FROM security_events
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """)
+        latest = cursor.fetchone()
+
+        if latest:
+            summary["latest_event"] = {
+                "id": latest["id"],
+                "timestamp": latest["timestamp"],
+                "event_type": latest["event_type"],
+                "severity": latest["severity"],
+                "tag": latest["tag"],
+                "message": latest["message"]
+            }
+
+    finally:
+        conn.close()
+
+    return summary
 
 def get_security_event_by_id(event_id):
     """
@@ -1104,53 +1194,126 @@ def handle_unknown_post_route(handler, ctx):
         "error": "POST endpoint not found",
         "endpoint": ctx.endpoint
     })
-
-
-# =========================
-# Request Handler
-# =========================
-
 # =========================
 # Request Handler
 # =========================
 
 class ZeroSOCHandler(BaseHTTPRequestHandler):
-    def send_json(self, status_code, data):
+    def send_json_response(self, status_code, data=None, error=None, request_id=None):
+        """
+        Sends a consistent JSON API response.
+        """
+
+        response = {
+            "success": 200 <= status_code < 400,
+            "status_code": status_code,
+            "request_id": request_id,
+            "data": data,
+            "error": error
+        }
+
+        response_body = json.dumps(response, indent=2).encode("utf-8")
+
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(response_body)))
+
+        if request_id:
+            self.send_header("X-Request-ID", request_id)
+
         self.end_headers()
-        self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
+        self.wfile.write(response_body)
+        
+    def handle_events(self, ctx, query_params):
+        """
+        Handles GET /api/v1/events.
+        Returns recent security events with optional filters.
+        """
+        limit = query_params.get("limit", ["50"])[0]
+        severity = query_params.get("severity", [None])[0]
+        tag = query_params.get("tag", [None])[0]
 
-    def handle_health(self):
-        self.send_json(200, {
-            "status": "ok",
-            "service": APP_NAME,
-            "api_version": API_VERSION,
-            "endpoint": self.path,
-            "message": "ZeroSOC backend is running",
-            "current_time": datetime.now().isoformat()
-        })
+        events = get_security_events(
+            limit=limit,
+            severity=severity,
+            tag=tag
+        )
 
-    def handle_status(self):
-        self.send_json(200, {
-            "endpoint": self.path,
-            "data": get_status_info()
-        })
+        log_request(ctx, 200, "Security events requested")
 
-    def handle_system(self):
-        self.send_json(200, {
-            "endpoint": self.path,
-            "data": get_system_info()
-        })
+        self.send_json_response(
+            200,
+            data={
+                "events": events,
+                "count": len(events),
+                "filters": {
+                    "limit": int(limit) if str(limit).isdigit() else 50,
+                    "severity": severity,
+                    "tag": tag
+                }
+            },
+            request_id=ctx.request_id
+        ) 
+        
+    def handle_recent_logs(self, ctx):
+        logs = get_recent_logs(limit=10)
 
-    def handle_not_found(self):
-        self.send_json(404, {
-            "status": "error",
-            "service": APP_NAME,
-            "api_version": API_VERSION,
-            "error": "Endpoint not found",
-            "path": self.path
-        })
+        log_request(ctx, 200, "Recent request logs requested")
+
+        self.send_json_response(
+            200,
+            data={
+                "logs": logs,
+                "count": len(logs)
+            },
+            request_id=ctx.request_id
+        )
+
+    def handle_health(self, ctx):
+        log_request(ctx, 200, "Health check")
+
+        self.send_json_response(
+            200,
+            data={
+                "status": "ok",
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "endpoint": ctx.endpoint,
+                "message": "ZeroSOC backend is running",
+                "current_time": datetime.now().isoformat()
+            },
+            request_id=ctx.request_id
+        )
+
+    def handle_status(self, ctx):
+        log_request(ctx, 200, "Status info requested")
+
+        self.send_json_response(
+            200,
+            data=get_status_info(),
+            request_id=ctx.request_id
+        )
+
+    def handle_system(self, ctx):
+        log_request(ctx, 200, "System info requested")
+
+        self.send_json_response(
+            200,
+            data=get_system_info(),
+            request_id=ctx.request_id
+        )
+
+    def handle_not_found(self, ctx):
+        log_request(ctx, 404, "Endpoint not found")
+
+        self.send_json_response(
+            404,
+            error={
+                "message": "Endpoint not found",
+                "endpoint": ctx.endpoint
+            },
+            request_id=ctx.request_id
+        )
 
     def get_routes(self):
         return {
@@ -1159,18 +1322,63 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "/system": self.handle_system,
             "/api/v1/health": self.handle_health,
             "/api/v1/status": self.handle_status,
-            "/api/v1/system": self.handle_system
+            "/api/v1/system": self.handle_system,
+            "/api/v1/logs/recent": self.handle_recent_logs
         }
 
     def do_GET(self):
-        routes = self.get_routes()
-        handler = routes.get(self.path)
+        request_id = str(uuid.uuid4())
+        parsed_path = urlparse(self.path)
+        endpoint = normalize_route(parsed_path.path)
+        client_ip = self.client_address[0]
+        query_params = parse_qs(parsed_path.query)
 
-        if handler is None:
-            self.handle_not_found()
+        ctx = RequestContext(
+            request_id=request_id,
+            method="GET",
+            endpoint=endpoint,
+            client_ip=client_ip,
+            start_time=time.time()
+        )
+
+        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
+            log_request(ctx, 401, "Unauthorized request")
+
+            self.send_json_response(
+                401,
+                error={
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key"
+                },
+                request_id=ctx.request_id
+            )
             return
 
-        handler()
+        if endpoint == "/api/v1/events/summary":
+            summary = get_events_summary()
+
+            log_request(ctx, 200, "Events summary retrieved")
+
+            self.send_json_response(200, {
+                "status": "ok",
+                "data": summary
+            })
+            return
+
+        if endpoint == "/api/v1/events":
+            self.handle_events(ctx, query_params)
+            return
+
+        routes = self.get_routes()
+        handler = routes.get(endpoint)
+
+        if handler is None:
+            self.handle_not_found(ctx)
+            return
+
+        handler(ctx)
+        
+        
 # =========================
 # Server Runner
 # =========================
