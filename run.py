@@ -1359,11 +1359,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
             log_request(ctx, 200, "Events summary retrieved")
 
-            self.send_json_response(200, {
+            self.send_json_response(
+                200,
+            data={
                 "status": "ok",
                 "data": summary
-            })
-            return
+            },
+            request_id=ctx.request_id
+        )
+        return
 
         if endpoint == "/api/v1/events":
             self.handle_events(ctx, query_params)
