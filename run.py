@@ -270,6 +270,43 @@ def get_security_events(limit=50, severity=None, tag=None):
 
     return events
 
+def get_security_event_by_id(event_id):
+    """
+    Reads one security event from SQLite by ID.
+    Returns None if the event does not exist.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            timestamp,
+            source_ip,
+            event_type,
+            severity,
+            message,
+            tag
+        FROM security_events
+        WHERE id = ?
+    """, (event_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    return {
+        "id": row["id"],
+        "timestamp": row["timestamp"],
+        "source_ip": row["source_ip"],
+        "event_type": row["event_type"],
+        "severity": row["severity"],
+        "message": row["message"],
+        "tags": row["tag"].split(",") if row["tag"] else []
+    }
+
 def get_system_info():
     """
     Deeper host/machine health information.
@@ -1105,8 +1142,14 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
     def require_auth_if_protected(self, ctx):
         """
         Enforces API key authentication only for protected endpoints.
+        Supports exact protected routes and dynamic event routes.
         """
-        if ctx.endpoint not in PROTECTED_ENDPOINTS:
+        is_protected = (
+            ctx.endpoint in PROTECTED_ENDPOINTS
+            or re.fullmatch(r"/api/v1/events/[a-fA-F0-9-]+", ctx.endpoint)
+        )
+
+        if not is_protected:
             return True
 
         if is_authorized(self.headers):
@@ -1166,6 +1209,28 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.send_json_response(200, {
                 "count": len(events),
                 "events": events
+            })
+            return
+        
+        event_id_match = re.fullmatch(r"/api/v1/events/([a-fA-F0-9-]+)", ctx.endpoint)
+
+        if event_id_match:
+            event_id = event_id_match.group(1)
+            event = get_security_event_by_id(event_id)
+
+            if event is None:
+                log_request(ctx, 404, "Security event not found")
+
+                self.send_json_response(404, {
+                    "error": "Security event not found",
+                    "event_id": event_id
+                })
+                return
+
+            log_request(ctx, 200, "Security event requested by ID")
+
+            self.send_json_response(200, {
+                "event": event
             })
             return
 
@@ -1298,6 +1363,7 @@ def run_server():
     print("  /api/v1/status")
     print("  /api/v1/system")
     print("  /api/v1/events")
+    print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
     print("  /api/v1/devices")
     print("  /api/v1/logs/recent")
