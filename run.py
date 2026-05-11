@@ -12,6 +12,7 @@ import sys
 import sqlite3
 import subprocess
 import ipaddress
+import re
 from datetime import datetime
 
 
@@ -54,9 +55,9 @@ PROTECTED_ENDPOINTS = {
     "/api/v1/events",
     "/api/v1/events/summary",
     "/api/v1/devices",
+    "/api/v1/network/scan",
     "/api/v1/metrics"
 }
-
 
 # =========================
 # Logging Config
@@ -240,8 +241,8 @@ def get_security_events(limit=50, severity=None, tag=None):
         params.append(severity)
 
     if tag:
-        filters.append("tag = ?")
-        params.append(tag)
+        filters.append("tag LIKE ?")
+        params.append(f"%{tag}%")
 
     if filters:
         query += " WHERE " + " AND ".join(filters)
@@ -375,6 +376,11 @@ def auto_tag_event(event):
     ]
 
     if any(keyword in combined_text for keyword in network_keywords):
+        tags.add("network")
+
+    if "unknown device" in combined_text:
+        tags.add("unknown-device")
+        tags.add("suspicious")
         tags.add("network")
 
     if "scan" in combined_text or "nmap" in combined_text:
@@ -515,6 +521,42 @@ def get_security_event_summary():
 # Network Scanner Helpers
 # =========================
 
+def get_arp_table():
+    """
+    Reads the local ARP table and returns a dictionary mapping:
+    IP address -> MAC address
+    """
+    arp_entries = {}
+
+    try:
+        result = subprocess.run(
+            ["arp", "-a"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        output = result.stdout
+
+        for line in output.splitlines():
+            ip_match = re.search(r"(\d+\.\d+\.\d+\.\d+)", line)
+            mac_match = re.search(
+                r"([0-9a-fA-F]{2}[-:]){5}[0-9a-fA-F]{2}",
+                line
+            )
+
+            if ip_match and mac_match:
+                ip_address = ip_match.group(1)
+                mac_address = mac_match.group(0).replace("-", ":").lower()
+
+                arp_entries[ip_address] = mac_address
+
+    except Exception:
+        return {}
+
+    return arp_entries
+
+
 def get_local_ip():
     """
     Finds the local IP address of the machine running ZeroSOC.
@@ -595,6 +637,7 @@ def get_hostname_for_ip(ip_address):
 def scan_network():
     """
     Scans the local /24 network and returns active devices.
+    Adds MAC addresses from the local ARP table when available.
     """
     network = get_local_network()
 
@@ -620,18 +663,24 @@ def scan_network():
                 "last_seen": datetime.now().isoformat()
             })
 
+    arp_table = get_arp_table()
+
+    for device in devices:
+        ip_address = device["ip_address"]
+        device["mac_address"] = arp_table.get(ip_address)
+
     return {
         "network": str(network),
         "device_count": len(devices),
         "devices": devices
     }
 
-
 def save_network_devices(devices):
     """
     Saves discovered devices to SQLite.
     If the device already exists, updates last_seen.
     """
+    arp_table = get_arp_table()
     now = datetime.now().isoformat()
 
     conn = get_db_connection()
@@ -641,7 +690,7 @@ def save_network_devices(devices):
         ip_address = device.get("ip_address")
         hostname = device.get("hostname")
         status = device.get("status", "online")
-        mac_address = device.get("mac_address")
+        mac_address = device.get("mac_address") or get_arp_table().get(ip_address)
 
         cursor.execute(
             "SELECT id FROM network_devices WHERE ip_address = ?",
@@ -685,6 +734,118 @@ def save_network_devices(devices):
     conn.commit()
     conn.close()
 
+def process_network_devices(devices):
+    """
+    Checks scanned devices against SQLite.
+    New devices are saved first.
+    Security events are created after the device database write is complete.
+    This avoids SQLite database locking.
+    """
+    now = datetime.now().isoformat()
+    unknown_devices = []
+    processed_devices = []
+    events_to_create = []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    for device in devices:
+        ip_address = device.get("ip_address")
+        hostname = device.get("hostname")
+        status = device.get("status", "online")
+        mac_address = device.get("mac_address")
+
+        existing_device = None
+
+        if mac_address:
+            cursor.execute("""
+                SELECT id FROM network_devices
+                WHERE mac_address = ?
+            """, (mac_address,))
+            existing_device = cursor.fetchone()
+
+        if existing_device is None and ip_address:
+            cursor.execute("""
+                SELECT id FROM network_devices
+                WHERE ip_address = ?
+            """, (ip_address,))
+            existing_device = cursor.fetchone()
+
+        if existing_device is None:
+            device["known"] = False
+            device["device_status"] = "new"
+
+            unknown_devices.append(device)
+
+            events_to_create.append({
+                "event_type": "unknown-device",
+                "severity": "medium",
+                "source": "network-scanner",
+                "message": (
+                    f"Unknown device detected on network: "
+                    f"IP={ip_address}, MAC={mac_address}, HOSTNAME={hostname}"
+                ),
+                "metadata": {
+                    "ip_address": ip_address,
+                    "mac_address": mac_address,
+                    "hostname": hostname
+                }
+            })
+
+            cursor.execute("""
+                INSERT INTO network_devices (
+                    ip_address,
+                    hostname,
+                    status,
+                    mac_address,
+                    first_seen,
+                    last_seen
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                ip_address,
+                hostname,
+                status,
+                mac_address,
+                now,
+                now
+            ))
+
+        else:
+            device["known"] = True
+            device["device_status"] = "known"
+
+            cursor.execute("""
+                UPDATE network_devices
+                SET hostname = ?, status = ?, mac_address = ?, last_seen = ?
+                WHERE ip_address = ? OR mac_address = ?
+            """, (
+                hostname,
+                status,
+                mac_address,
+                now,
+                ip_address,
+                mac_address
+            ))
+
+        processed_devices.append(device)
+
+    conn.commit()
+    conn.close()
+
+    for event_data in events_to_create:
+        create_security_event(
+            event_type=event_data["event_type"],
+            severity=event_data["severity"],
+            source=event_data["source"],
+            message=event_data["message"],
+            metadata=event_data["metadata"]
+        )
+
+    return {
+        "devices": processed_devices,
+        "unknown_devices": unknown_devices
+    }
 
 def get_recent_network_devices(limit=50):
     """
@@ -868,411 +1029,256 @@ def get_request_metrics():
 
 
 # =========================
+# POST Route Handlers
+# =========================
+
+def handle_create_event(handler, ctx, data):
+    """
+    Handles POST /api/v1/events.
+    Creates a new security event.
+    """
+    event_type = data.get("event_type", "manual")
+    severity = data.get("severity", "low")
+    message = data.get("message", "No message provided")
+    source = data.get("source", "api")
+
+    event = create_security_event(
+        event_type=event_type,
+        severity=severity,
+        source=source,
+        message=message
+    )
+
+    log_request(ctx, 201, "Security event created")
+
+    handler.send_json_response(201, {
+        "status": "created",
+        "event": event
+    })
+
+
+def handle_unknown_post_route(handler, ctx):
+    """
+    Handles unknown POST routes.
+    """
+    log_request(ctx, 404, "POST endpoint not found")
+
+    handler.send_json_response(404, {
+        "error": "POST endpoint not found",
+        "endpoint": ctx.endpoint
+    })
+
+
+# =========================
 # Request Handler
 # =========================
 
 class ZeroSOCHandler(BaseHTTPRequestHandler):
-    def send_json(self, status_code, data, request_id=None):
+
+    def send_json_response(self, status_code, payload):
+        """
+        Sends a JSON API response.
+        """
+        response_body = json.dumps(payload, indent=2).encode("utf-8")
+
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
-
-        if request_id:
-            self.send_header("X-Request-ID", request_id)
-
+        self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
-        self.wfile.write(json.dumps(data, indent=2).encode("utf-8"))
+        self.wfile.write(response_body)
 
-    def read_json_body(self):
-        try:
-            content_length = int(self.headers.get("Content-Length", 0))
+    def build_context(self, method):
+        """
+        Builds a request context object for logging and routing.
+        """
+        parsed_path = urlparse(self.path)
+        endpoint = normalize_route(parsed_path.path)
 
-            if content_length <= 0:
-                return {}
-
-            body = self.rfile.read(content_length)
-            return json.loads(body.decode("utf-8"))
-
-        except json.JSONDecodeError:
-            return None
-        except Exception:
-            return None
-
-    def reject_unauthorized(self, ctx):
-        log_request(ctx, 401, "Unauthorized request blocked")
-
-        create_security_event(
-            event_type="unauthorized_request",
-            severity="medium",
-            source=ctx.client_ip,
-            message=f"Unauthorized request blocked for endpoint: {ctx.endpoint}",
-            metadata={
-                "method": ctx.method,
-                "endpoint": ctx.endpoint
-            }
+        return RequestContext(
+            request_id=str(uuid.uuid4()),
+            method=method,
+            endpoint=endpoint,
+            client_ip=self.client_address[0],
+            start_time=time.time()
         )
 
-        self.send_json(401, {
-            "status": "error",
-            "service": APP_NAME,
-            "api_version": API_VERSION,
+    def require_auth_if_protected(self, ctx):
+        """
+        Enforces API key authentication only for protected endpoints.
+        """
+        if ctx.endpoint not in PROTECTED_ENDPOINTS:
+            return True
+
+        if is_authorized(self.headers):
+            return True
+
+        log_request(ctx, 401, "Unauthorized request")
+
+        self.send_json_response(401, {
             "error": "Unauthorized",
-            "message": "Missing or invalid API key",
-            "request_id": ctx.request_id
-        }, ctx.request_id)
+            "message": f"Missing or invalid {API_KEY_HEADER} header"
+        })
 
-    def handle_health(self, ctx):
-        log_request(ctx, 200, "Health check requested")
-
-        self.send_json(200, {
-            "status": "ok",
-            "service": APP_NAME,
-            "api_version": API_VERSION,
-            "endpoint": ctx.endpoint,
-            "message": "ZeroSOC backend is running",
-            "current_time": datetime.now().isoformat(),
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_status(self, ctx):
-        log_request(ctx, 200, "Status requested")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": get_status_info(),
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_system(self, ctx):
-        log_request(ctx, 200, "System information requested")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": get_system_info(),
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_events(self, ctx):
-        parsed_path = urlparse(self.path)
-        query_params = parse_qs(parsed_path.query)
-
-        severity = query_params.get("severity", [None])[0]
-        tag = query_params.get("tag", [None])[0]
-        limit_raw = query_params.get("limit", ["50"])[0]
-
-        try:
-            limit = int(limit_raw)
-        except ValueError:
-            limit = 50
-
-        if limit < 1:
-            limit = 50
-
-        if limit > 100:
-            limit = 100
-
-        events = get_security_events(
-            limit=limit,
-            severity=severity,
-            tag=tag
-        )
-
-        log_request(ctx, 200, "Security events requested from SQLite")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": {
-                "count": len(events),
-                "limit": limit,
-                "filters": {
-                    "severity": severity,
-                    "tag": tag
-                },
-                "events": events
-            },
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_events_summary(self, ctx):
-        summary = get_security_event_summary()
-
-        log_request(ctx, 200, "Security event summary requested")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": summary,
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_devices(self, ctx):
-        parsed_path = urlparse(self.path)
-        query_params = parse_qs(parsed_path.query)
-
-        scan_requested = query_params.get("scan", ["false"])[0].lower() == "true"
-
-        if scan_requested:
-            scan_result = scan_network()
-
-            if "error" not in scan_result:
-                save_network_devices(scan_result["devices"])
-
-            log_request(ctx, 200, "Network device scan completed")
-
-            self.send_json(200, {
-                "endpoint": ctx.endpoint,
-                "data": {
-                    "scan_performed": True,
-                    "network": scan_result.get("network"),
-                    "device_count": scan_result.get("device_count", 0),
-                    "devices": scan_result.get("devices", []),
-                    "error": scan_result.get("error")
-                },
-                "request_id": ctx.request_id
-            }, ctx.request_id)
-            return
-
-        devices = get_recent_network_devices()
-
-        log_request(ctx, 200, "Network devices retrieved from SQLite")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": {
-                "scan_performed": False,
-                "device_count": len(devices),
-                "devices": devices
-            },
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-    def handle_recent_logs(self, ctx):
-        logs = get_recent_logs(limit=10)
-
-        log_request(ctx, 200, "Recent logs requested")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": {
-                "count": len(logs),
-                "logs": logs
-            },
-            "request_id": ctx.request_id
-        }, ctx.request_id)
-
-    def handle_metrics(self, ctx):
-        metrics = get_request_metrics()
-
-        log_request(ctx, 200, "Metrics requested")
-
-        self.send_json(200, {
-            "endpoint": ctx.endpoint,
-            "data": metrics,
-            "request_id": ctx.request_id
-        }, ctx.request_id)
+        return False
 
     def do_GET(self):
-        start_time = time.time()
-        request_id = str(uuid.uuid4())
+        ctx = self.build_context("GET")
 
-        parsed_path = urlparse(self.path)
-        endpoint = normalize_route(parsed_path.path)
-        client_ip = self.client_address[0]
-
-        ctx = RequestContext(
-            request_id=request_id,
-            method="GET",
-            endpoint=endpoint,
-            client_ip=client_ip,
-            start_time=start_time
-        )
-
-        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
-            self.reject_unauthorized(ctx)
+        if not self.require_auth_if_protected(ctx):
             return
 
-        routes = {
-            "/health": self.handle_health,
-            "/api/v1/health": self.handle_health,
+        parsed_path = urlparse(self.path)
+        query_params = parse_qs(parsed_path.query)
 
-            "/status": self.handle_status,
-            "/api/v1/status": self.handle_status,
+        if ctx.endpoint in ["/health", "/api/v1/health"]:
+            log_request(ctx, 200, "Health check")
 
-            "/system": self.handle_system,
-            "/api/v1/system": self.handle_system,
+            self.send_json_response(200, {
+                "status": "ok"
+            })
+            return
 
-            "/api/v1/events": self.handle_events,
-            "/api/v1/events/summary": self.handle_events_summary,
-            "/api/v1/devices": self.handle_devices,
-            "/api/v1/logs/recent": self.handle_recent_logs,
-            "/api/v1/metrics": self.handle_metrics,
-        }
+        if ctx.endpoint in ["/status", "/api/v1/status"]:
+            log_request(ctx, 200, "Status check")
 
-        handler = routes.get(endpoint)
+            self.send_json_response(200, get_status_info())
+            return
 
-        if handler is None:
-            log_request(ctx, 404, "Endpoint not found")
+        if ctx.endpoint in ["/system", "/api/v1/system"]:
+            log_request(ctx, 200, "System info requested")
 
-            create_security_event(
-                event_type="unknown_endpoint",
-                severity="low",
-                source=client_ip,
-                message=f"Unknown GET endpoint requested: {endpoint}",
-                metadata={
-                    "method": "GET",
-                    "path": endpoint
-                }
+            self.send_json_response(200, get_system_info())
+            return
+
+        if ctx.endpoint == "/api/v1/events":
+            limit = int(query_params.get("limit", [50])[0])
+            severity = query_params.get("severity", [None])[0]
+            tag = query_params.get("tag", [None])[0]
+
+            events = get_security_events(
+                limit=limit,
+                severity=severity,
+                tag=tag
             )
 
-            self.send_json(404, {
-                "status": "error",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "error": "Endpoint not found",
-                "path": endpoint,
-                "request_id": request_id
-            }, request_id)
+            log_request(ctx, 200, "Security events requested")
+
+            self.send_json_response(200, {
+                "count": len(events),
+                "events": events
+            })
+            return
+
+        if ctx.endpoint == "/api/v1/events/summary":
+            summary = get_security_event_summary()
+
+            log_request(ctx, 200, "Security event summary requested")
+
+            self.send_json_response(200, summary)
+            return
+
+        if ctx.endpoint == "/api/v1/devices":
+            limit = int(query_params.get("limit", [50])[0])
+            devices = get_recent_network_devices(limit=limit)
+
+            log_request(ctx, 200, "Network devices requested")
+
+            self.send_json_response(200, {
+                "count": len(devices),
+                "devices": devices
+            })
+            return
+
+        if ctx.endpoint == "/api/v1/network/scan":
+            scan_result = scan_network()
+
+            if "error" in scan_result:
+                log_request(ctx, 500, "Network scan failed")
+
+                self.send_json_response(500, scan_result)
+                return
+
+            processed_result = process_network_devices(scan_result["devices"])
+
+            log_request(ctx, 200, "Network scan completed")
+
+            self.send_json_response(200, {
+                "network": scan_result["network"],
+                "device_count": len(processed_result["devices"]),
+                "unknown_device_count": len(processed_result["unknown_devices"]),
+                "devices": processed_result["devices"],
+                "unknown_devices": processed_result["unknown_devices"]
+            })
+            return
+
+        if ctx.endpoint in ["/api/v1/logs", "/api/v1/logs/recent"]:
+            limit = int(query_params.get("limit", [10])[0])
+            logs = get_recent_logs(limit=limit)
+
+            log_request(ctx, 200, "Recent logs requested")
+
+            self.send_json_response(200, {
+                "count": len(logs),
+                "logs": logs
+            })
+            return
+
+        if ctx.endpoint == "/api/v1/metrics":
+            metrics = get_request_metrics()
+
+            log_request(ctx, 200, "Request metrics requested")
+
+            self.send_json_response(200, metrics)
+            return
+
+        log_request(ctx, 404, "GET endpoint not found")
+
+        self.send_json_response(404, {
+            "error": "GET endpoint not found",
+            "endpoint": ctx.endpoint
+        })
+
+    def do_POST(self):
+        ctx = self.build_context("POST")
+
+        if not self.require_auth_if_protected(ctx):
             return
 
         try:
-            handler(ctx)
+            content_length = int(self.headers.get("Content-Length", 0))
+            raw_body = self.rfile.read(content_length).decode("utf-8")
+
+            if raw_body:
+                data = json.loads(raw_body)
+            else:
+                data = {}
+
+        except json.JSONDecodeError:
+            log_request(ctx, 400, "Invalid JSON body")
+
+            self.send_json_response(400, {
+                "error": "Invalid JSON body"
+            })
+            return
 
         except Exception as error:
-            log_request(ctx, 500, f"Internal server error: {str(error)}")
+            log_request(ctx, 500, f"Failed to read POST body: {error}")
 
-            self.send_json(500, {
-                "status": "error",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "error": "Internal server error",
-                "path": endpoint,
-                "details": str(error),
-                "request_id": request_id
-            }, request_id)
-
-    def do_POST(self):
-        start_time = time.time()
-        request_id = str(uuid.uuid4())
-
-        parsed_path = urlparse(self.path)
-        endpoint = normalize_route(parsed_path.path)
-        client_ip = self.client_address[0]
-
-        ctx = RequestContext(
-            request_id=request_id,
-            method="POST",
-            endpoint=endpoint,
-            client_ip=client_ip,
-            start_time=start_time
-        )
-
-        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
-            self.reject_unauthorized(ctx)
+            self.send_json_response(500, {
+                "error": "Failed to read POST body"
+            })
             return
 
-        if endpoint == "/api/v1/events":
-            body = self.read_json_body()
+        post_routes = {
+            "/api/v1/events": handle_create_event
+        }
 
-            if body is None:
-                log_request(ctx, 400, "Invalid JSON body")
+        route_handler = post_routes.get(ctx.endpoint)
 
-                self.send_json(400, {
-                    "status": "error",
-                    "service": APP_NAME,
-                    "api_version": API_VERSION,
-                    "error": "Invalid JSON body",
-                    "request_id": request_id
-                }, request_id)
-                return
-
-            event_type = body.get("event_type")
-            severity = body.get("severity", "low")
-            source = body.get("source", client_ip)
-            message = body.get("message")
-            metadata = body.get("metadata", {})
-
-            if not event_type or not message:
-                log_request(ctx, 400, "Missing required event fields")
-
-                self.send_json(400, {
-                    "status": "error",
-                    "service": APP_NAME,
-                    "api_version": API_VERSION,
-                    "error": "Missing required fields",
-                    "required": ["event_type", "message"],
-                    "optional": ["severity", "source", "metadata"],
-                    "request_id": request_id
-                }, request_id)
-                return
-
-            allowed_severities = ["low", "medium", "high", "critical"]
-            severity = str(severity).lower()
-
-            if severity not in allowed_severities:
-                log_request(ctx, 400, f"Invalid severity: {severity}")
-
-                self.send_json(400, {
-                    "status": "error",
-                    "service": APP_NAME,
-                    "api_version": API_VERSION,
-                    "error": "Invalid severity",
-                    "allowed": allowed_severities,
-                    "request_id": request_id
-                }, request_id)
-                return
-
-            if not isinstance(metadata, dict):
-                log_request(ctx, 400, "Invalid metadata format")
-
-                self.send_json(400, {
-                    "status": "error",
-                    "service": APP_NAME,
-                    "api_version": API_VERSION,
-                    "error": "metadata must be a JSON object",
-                    "request_id": request_id
-                }, request_id)
-                return
-
-            event = create_security_event(
-                event_type=event_type,
-                severity=severity,
-                source=source,
-                message=message,
-                metadata=metadata
-            )
-
-            log_request(ctx, 201, f"Security event created: {event_type}")
-
-            self.send_json(201, {
-                "status": "created",
-                "service": APP_NAME,
-                "api_version": API_VERSION,
-                "message": "Security event created",
-                "event": event,
-                "request_id": request_id
-            }, request_id)
-            return
-
-        log_request(ctx, 404, "POST endpoint not found")
-
-        create_security_event(
-            event_type="unknown_post_endpoint",
-            severity="low",
-            source=client_ip,
-            message=f"Unknown POST endpoint requested: {endpoint}",
-            metadata={
-                "method": "POST",
-                "path": endpoint
-            }
-        )
-
-        self.send_json(404, {
-            "status": "error",
-            "service": APP_NAME,
-            "api_version": API_VERSION,
-            "error": "Endpoint not found",
-            "path": endpoint,
-            "request_id": request_id
-        }, request_id)
-
-
+        if route_handler:
+            route_handler(self, ctx, data)
+        else:
+            handle_unknown_post_route(self, ctx)
 # =========================
 # Server Runner
 # =========================
