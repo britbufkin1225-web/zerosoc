@@ -1178,10 +1178,14 @@ def handle_create_event(handler, ctx, data):
 
     log_request(ctx, 201, "Security event created")
 
-    handler.send_json_response(201, {
-        "status": "created",
-        "event": event
-    })
+    handler.send_json_response(
+        201,
+        data={
+            "status": "created",
+            "event": event
+        },
+        request_id=ctx.request_id
+    )
 
 
 def handle_unknown_post_route(handler, ctx):
@@ -1190,10 +1194,16 @@ def handle_unknown_post_route(handler, ctx):
     """
     log_request(ctx, 404, "POST endpoint not found")
 
-    handler.send_json_response(404, {
-        "error": "POST endpoint not found",
-        "endpoint": ctx.endpoint
-    })
+    handler.send_json_response(
+        404,
+        error={
+            "message": "POST endpoint not found",
+            "endpoint": ctx.endpoint
+        },
+        request_id=ctx.request_id
+    )
+    
+    
 # =========================
 # Request Handler
 # =========================
@@ -1223,6 +1233,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
         self.end_headers()
         self.wfile.write(response_body)
+        
+    def requires_auth(self, endpoint):
+        if endpoint in PROTECTED_ENDPOINTS:
+            return True
+
+        if endpoint.startswith("/api/v1/events/"):
+            return True
+
+        return False
         
     def handle_events(self, ctx, query_params):
         """
@@ -1254,6 +1273,124 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             },
             request_id=ctx.request_id
         ) 
+        
+    def handle_events_summary(self, ctx):
+        summary = get_events_summary()
+
+        log_request(ctx, 200, "Security events summary requested")
+
+        self.send_json_response(
+            200,
+            data=summary,
+            request_id=ctx.request_id
+        )
+        
+    def handle_event_by_id(self, ctx, endpoint):
+        event_id = endpoint.replace("/api/v1/events/", "").strip()
+
+        if not event_id:
+            log_request(ctx, 400, "Missing event ID")
+
+            self.send_json_response(
+                400,
+                 error={
+                    "message": "Missing event ID"
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        event = get_security_event_by_id(event_id)
+
+        if event is None:
+            log_request(ctx, 404, "Security event not found")
+
+            self.send_json_response(
+                404,
+                error={
+                    "message": "Security event not found",
+                    "event_id": event_id
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        log_request(ctx, 200, "Security event requested by ID")
+
+        self.send_json_response(
+            200,
+            data={
+                "event": event
+            },
+            request_id=ctx.request_id
+        )
+        
+    def handle_devices(self, ctx):
+        devices = get_recent_network_devices(limit=50)
+
+        log_request(ctx, 200, "Network devices requested")
+
+        self.send_json_response(
+            200,
+            data={
+                "devices": devices,
+                "count": len(devices)
+            },
+            request_id=ctx.request_id
+        )
+        
+    def handle_network_scan(self, ctx):
+        scan_result = scan_network()
+
+        if "error" in scan_result:
+            log_request(ctx, 500, "Network scan failed")
+
+            self.send_json_response(
+                500,
+                error={
+                    "message": scan_result["error"]
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        processed = process_network_devices(scan_result["devices"])
+
+        log_request(ctx, 200, "Network scan completed")
+
+        self.send_json_response(
+            200,
+            data={
+                "network": scan_result["network"],
+                "device_count": len(processed["devices"]),
+                "unknown_device_count": len(processed["unknown_devices"]),
+                "devices": processed["devices"],
+                "unknown_devices": processed["unknown_devices"]
+            },
+            request_id=ctx.request_id
+        )
+        
+    def handle_metrics(self, ctx):
+        request_metrics = get_request_metrics()
+        event_summary = get_security_event_summary()
+        devices = get_recent_network_devices(limit=50)
+
+        log_request(ctx, 200, "Metrics requested")
+
+        self.send_json_response(
+            200,
+            data={
+                "service": APP_NAME,
+                "api_version": API_VERSION,
+                "uptime_seconds": get_uptime_seconds(),
+                "requests": request_metrics,
+                "events": event_summary,
+                "devices": {
+                    "total_recent_devices": len(devices)
+                }
+            },
+            request_id=ctx.request_id
+        )
         
     def handle_recent_logs(self, ctx):
         logs = get_recent_logs(limit=10)
@@ -1326,12 +1463,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "/api/v1/logs/recent": self.handle_recent_logs
         }
 
+
+
     def do_GET(self):
-        request_id = str(uuid.uuid4())
         parsed_path = urlparse(self.path)
         endpoint = normalize_route(parsed_path.path)
-        client_ip = self.client_address[0]
         query_params = parse_qs(parsed_path.query)
+
+        request_id = str(uuid.uuid4())
+        client_ip = self.client_address[0]
 
         ctx = RequestContext(
             request_id=request_id,
@@ -1341,63 +1481,141 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             start_time=time.time()
         )
 
-        if endpoint in PROTECTED_ENDPOINTS and not is_authorized(self.headers):
+        if self.requires_auth(endpoint) and not is_authorized(self.headers):
             log_request(ctx, 401, "Unauthorized request")
-
             self.send_json_response(
                 401,
                 error={
-                    "code": "UNAUTHORIZED",
                     "message": "Missing or invalid API key"
                 },
-                request_id=ctx.request_id
+                request_id=request_id
             )
             return
 
+        if endpoint in ["/health", "/api/v1/health"]:
+            self.handle_health(ctx)
+            return
+
+        if endpoint in ["/status", "/api/v1/status"]:
+            self.handle_status(ctx)
+            return
+
+        if endpoint in ["/system", "/api/v1/system"]:
+            self.handle_system(ctx)
+            return
+
+        if endpoint == "/api/v1/logs/recent":
+            self.handle_recent_logs(ctx)
+            return
+
         if endpoint == "/api/v1/events/summary":
-            summary = get_events_summary()
-
-            log_request(ctx, 200, "Events summary retrieved")
-
-            self.send_json_response(
-                200,
-            data={
-                "status": "ok",
-                "data": summary
-            },
-            request_id=ctx.request_id
-        )
-        return
+            self.handle_events_summary(ctx)
+            return
 
         if endpoint == "/api/v1/events":
             self.handle_events(ctx, query_params)
             return
 
-        routes = self.get_routes()
-        handler = routes.get(endpoint)
-
-        if handler is None:
-            self.handle_not_found(ctx)
+        if endpoint.startswith("/api/v1/events/"):
+            self.handle_event_by_id(ctx, endpoint)
             return
 
-        handler(ctx)
+        if endpoint == "/api/v1/devices":
+            self.handle_devices(ctx)
+            return
+
+        if endpoint == "/api/v1/network/scan":
+            self.handle_network_scan(ctx)
+            return
+
+        if endpoint == "/api/v1/metrics":
+            self.handle_metrics(ctx)
+            return
+
+        self.handle_not_found(ctx)
         
+    def do_POST(self):
+        parsed_path = urlparse(self.path)
+        endpoint = normalize_route(parsed_path.path)
+
+        request_id = str(uuid.uuid4())
+        client_ip = self.client_address[0]
+
+        ctx = RequestContext(
+            request_id=request_id,
+            method="POST",
+            endpoint=endpoint,
+            client_ip=client_ip,
+            start_time=time.time()
+        )
+
+        if self.requires_auth(endpoint) and not is_authorized(self.headers):
+            log_request(ctx, 401, "Unauthorized POST request")
+
+            self.send_json_response(
+                401,
+                error={
+                    "message": "Missing or invalid API key"
+                },
+                request_id=request_id
+            )
+            return
+
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode("utf-8")
+
+            if not body:
+                raise ValueError("Request body is empty")
+
+            data = json.loads(body)
+
+        except json.JSONDecodeError:
+            log_request(ctx, 400, "Invalid JSON body")
+
+            self.send_json_response(
+                400,
+                error={
+                    "message": "Invalid JSON body"
+                },
+                request_id=request_id
+            )
+            return
+
+        except ValueError as error:
+            log_request(ctx, 400, str(error))
+
+            self.send_json_response(
+                400,
+                error={
+                    "message": str(error)
+                },
+                request_id=request_id
+            )
+            return
+
+        if endpoint == "/api/v1/events":
+            handle_create_event(self, ctx, data)
+            return
+
+        handle_unknown_post_route(self, ctx) 
         
 # =========================
 # Server Runner
 # =========================
 
 def run_server():
-    host = "localhost"
+    init_database()
+
+    host = "0.0.0.0"
     port = 8000
 
     server = HTTPServer((host, port), ZeroSOCHandler)
 
     print(f"{APP_NAME} backend running at http://{host}:{port}")
+    print(f"SQLite database: {DB_FILE}")
+    print("")
     print("Available endpoints:")
-    print("  /health")
-    print("  /status")
-    print("  /system")
     print("  /api/v1/health")
     print("  /api/v1/status")
     print("  /api/v1/system")
@@ -1405,6 +1623,7 @@ def run_server():
     print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
     print("  /api/v1/devices")
+    print("  /api/v1/network/scan")
     print("  /api/v1/logs/recent")
     print("  /api/v1/metrics")
     print("")
@@ -1415,7 +1634,7 @@ def run_server():
 
 
 if __name__ == "__main__":
-    init_database()
+    run_server()
 
     server = HTTPServer(("0.0.0.0", 8000), ZeroSOCHandler)
     print("ZeroSOC backend running on http://0.0.0.0:8000")
