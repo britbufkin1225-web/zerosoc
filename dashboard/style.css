@@ -1,0 +1,165 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #111827;
+    color: #f9fafb;
+}
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px;
+    background: #030712;
+    border-bottom: 1px solid #374151;
+}
+
+.dashboard-header h1 {
+    margin: 0;
+    font-size: 32px;
+}
+
+.dashboard-header p {
+    margin: 6px 0 0;
+    color: #9ca3af;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    padding: 24px;
+}
+
+.card {
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.card h2 {
+    margin-top: 0;
+    border-bottom: 1px solid #374151;
+    padding-bottom: 10px;
+}
+
+.wide {
+    grid-column: span 2;
+}
+
+.data-block {
+    line-height: 1.8;
+    color: #e5e7eb;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #374151;
+    padding: 8px 0;
+}
+
+.status-label {
+    color: #9ca3af;
+}
+
+.status-value {
+    font-weight: bold;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+}
+
+th,
+td {
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid #374151;
+}
+
+th {
+    color: #9ca3af;
+    font-size: 14px;
+    text-transform: uppercase;
+}
+
+td {
+    color: #f3f4f6;
+}
+
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.badge-low {
+    background: #064e3b;
+    color: #d1fae5;
+}
+
+.badge-medium {
+    background: #78350f;
+    color: #fef3c7;
+}
+
+.badge-high {
+    background: #7f1d1d;
+    color: #fee2e2;
+}
+
+.error {
+    color: #fca5a5;
+}
+
+.dashboard-footer {
+    padding: 16px 24px;
+    color: #9ca3af;
+    border-top: 1px solid #374151;
+    background: #030712;
+}
+
+@media (max-width: 800px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .wide {
+        grid-column: span 1;
+    }
+
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+}

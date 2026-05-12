@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ZeroSOC Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header class="dashboard-header">
+        <div>
+            <h1>ZeroSOC Dashboard</h1>
+            <p>Lightweight local security operations monitor</p>
+        </div>
+
+        <button id="refreshButton">Refresh</button>
+    </header>
+
+    <main class="dashboard-grid">
+        <section class="card">
+            <h2>System Status</h2>
+            <div id="systemStatus" class="data-block">
+                Loading system data...
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Metrics</h2>
+            <div id="metricsStatus" class="data-block">
+                Loading metrics...
+            </div>
+        </section>
+
+        <section class="card wide">
+            <h2>Security Events</h2>
+            <div id="eventsTable" class="table-wrap">
+                Loading events...
+            </div>
+        </section>
+
+        <section class="card wide">
+            <h2>Network Devices</h2>
+            <div id="devicesTable" class="table-wrap">
+                Loading devices...
+            </div>
+        </section>
+    </main>
+
+    <footer class="dashboard-footer">
+        <span id="lastUpdated">Last updated: never</span>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

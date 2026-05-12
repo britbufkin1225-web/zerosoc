@@ -1452,6 +1452,13 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             request_id=ctx.request_id
         )
 
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        super().end_headers()
+
     def get_routes(self):
         return {
             "/health": self.handle_health,
@@ -1463,7 +1470,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "/api/v1/logs/recent": self.handle_recent_logs
         }
 
-
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self):
         parsed_path = urlparse(self.path)
