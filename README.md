@@ -233,4 +233,10 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ## Development Notes
 
-ZeroSOC is currently in active development. The backend foundation is functional and tested. The next major focus is building a simple dashboard so the project becomes easier to demonstrate visually.
+## Development Notes
+
+ZeroSOC is currently in active development. The backend foundation is functional and tested, with protected API endpoints, request logging, SQLite persistence, security event storage, network device tracking, and basic metrics.
+
+Phase 4 dashboard work has started. A basic web dashboard now loads in the browser, connects to the backend API, and displays system health, metrics, recent security events, and network devices. The project now has a working visual layer, making it easier to demonstrate as a cybersecurity/backend portfolio project.
+
+The next major focus is dashboard polish, including cleaner timestamp formatting, API status indicators, improved event summaries, screenshots, and final README presentation.
