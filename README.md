@@ -220,6 +220,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Display recent security events
 - [x] Display network devices
 - [x] Add manual refresh button
+- [ ] Display event summary
 
 ### Phase 5: Polish and Portfolio Readiness
 
