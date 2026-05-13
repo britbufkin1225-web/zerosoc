@@ -22,6 +22,28 @@ async function fetchApi(endpoint) {
     return response.json();
 }
 
+function formatUptime(seconds) {
+    if (seconds === null || seconds === undefined) {
+        return "Unknown";
+    }
+
+    const totalSeconds = Number(seconds);
+
+    if (Number.isNaN(totalSeconds)) {
+        return "Unknown";
+    }
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+    }
+
+    return `${minutes}m`;
+}
+
+
 function formatValue(value) {
     if (value === null || value === undefined || value === "") {
         return "N/A";
@@ -57,7 +79,7 @@ function renderSystem(data) {
         "Platform Version": data.platform_version,
         "Machine": data.machine,
         "Python Version": data.python_version,
-        "Uptime Seconds": data.uptime_seconds,
+        "Uptime": formatUptime(data.uptime_seconds),
         "Current Time": data.current_time,
         "CPU Temp": data.cpu_temp_c ? `${data.cpu_temp_c} °C` : "N/A",
         "Disk Total": disk.total_gb ? `${disk.total_gb} GB` : "N/A",
@@ -88,6 +110,26 @@ function renderMetrics(data) {
 
     metricsStatus.innerHTML = renderStatusRows(metrics);
 }
+
+function setSummaryCardStatus(cardId, labelId, statusClass, labelText) {
+    const card = document.getElementById(cardId);
+    const label = document.getElementById(labelId);
+
+    if (!card || !label) {
+        return;
+    }
+
+    card.classList.remove(
+        "status-good",
+        "status-warning",
+        "status-danger",
+        "status-neutral"
+    );
+
+    card.classList.add(statusClass);
+    label.textContent = labelText;
+}
+
 function severityBadge(severity) {
     const cleanSeverity = String(severity || "low").toLowerCase();
 
@@ -170,6 +212,109 @@ function renderDevices(data) {
     `;
 }
 
+function updateSummaryCards(system, events, devices, metrics) {
+    const systemStatusCard = document.getElementById("summary-system-status");
+    const devicesCard = document.getElementById("summary-devices");
+    const eventsCard = document.getElementById("summary-events");
+    const apiCard = document.getElementById("summary-api");
+
+    const eventList = events.events || events || [];
+    const deviceList = devices.devices || devices || [];
+
+    systemStatusCard.textContent = "Online";
+    const recentErrors = metrics.requests?.recent_error_count || 0;
+    const totalRequests = metrics.requests?.total_requests_logged || 0;
+
+    if (recentErrors > 0) {
+        apiCard.textContent = `${recentErrors} errors`;
+    } else {
+        apiCard.textContent = `${totalRequests} requests`;
+    }
+    eventsCard.textContent = eventList.length;
+    devicesCard.textContent = deviceList.length;
+
+    setSummaryCardStatus(
+        "system-summary-card",
+        "system-summary-label",
+        "status-good",
+        "Online"
+    );
+
+    const highEvents = eventList.filter(event =>
+        String(event.severity || "").toLowerCase() === "high"
+    ).length;
+
+    const mediumEvents = eventList.filter(event =>
+        String(event.severity || "").toLowerCase() === "medium"
+    ).length;
+
+    if (highEvents > 0) {
+        setSummaryCardStatus(
+            "events-summary-card",
+            "events-summary-label",
+            "status-danger",
+            "High Risk"
+        );
+    } else if (mediumEvents > 0 || eventList.length > 0) {
+        setSummaryCardStatus(
+            "events-summary-card",
+            "events-summary-label",
+            "status-warning",
+            "Review"
+        );
+    } else {
+        setSummaryCardStatus(
+            "events-summary-card",
+            "events-summary-label",
+            "status-good",
+            "Clear"
+        );
+    }
+
+    const unknownDevices = deviceList.filter(device =>
+        String(device.status || device.device_status || "").toLowerCase() === "unknown"
+    ).length;
+
+    if (unknownDevices > 0) {
+        setSummaryCardStatus(
+            "devices-summary-card",
+            "devices-summary-label",
+            "status-warning",
+            "Unknown"
+        );
+    } else if (deviceList.length > 0) {
+        setSummaryCardStatus(
+            "devices-summary-card",
+            "devices-summary-label",
+            "status-good",
+            "Known"
+        );
+    } else {
+        setSummaryCardStatus(
+            "devices-summary-card",
+            "devices-summary-label",
+            "status-neutral",
+            "No Devices"
+        );
+    }
+
+    if (recentErrors > 0) {
+        setSummaryCardStatus(
+            "api-summary-card",
+            "api-summary-label",
+            "status-warning",
+            "Errors"
+        );
+    } else {
+        setSummaryCardStatus(
+            "api-summary-card",
+            "api-summary-label",
+            "status-good",
+            "Healthy"
+        );
+    }
+}
+
 async function loadDashboard() {
     systemStatus.innerHTML = "Loading system data...";
     metricsStatus.innerHTML = "Loading metrics...";
@@ -184,10 +329,17 @@ async function loadDashboard() {
             fetchApi("/api/v1/devices")
         ]);
 
-        renderSystem(systemData.data || systemData);
-        renderMetrics(metricsData.data || metricsData);
-        renderEvents(eventsData.data || eventsData);
-        renderDevices(devicesData.data || devicesData);
+        const system = systemData.data || systemData;
+        const metrics = metricsData.data || metricsData;
+        const events = eventsData.data || eventsData;
+        const devices = devicesData.data || devicesData;
+
+        renderSystem(system);
+        renderMetrics(metrics);
+        renderEvents(events);
+        renderDevices(devices);
+
+        updateSummaryCards(system, events, devices, metrics);
 
         lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
     } catch (error) {
@@ -195,6 +347,35 @@ async function loadDashboard() {
         metricsStatus.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
+
+
+        setSummaryCardStatus(
+            "system-summary-card",
+            "system-summary-label",
+            "status-danger",
+            "Offline"
+        );
+
+        setSummaryCardStatus(
+            "events-summary-card",
+            "events-summary-label",
+            "status-neutral",
+            "Unknown"
+        );
+
+        setSummaryCardStatus(
+            "devices-summary-card",
+            "devices-summary-label",
+            "status-neutral",
+            "Unknown"
+        );
+
+        setSummaryCardStatus(
+            "api-summary-card",
+            "api-summary-label",
+            "status-danger",
+            "Unavailable"
+        );
     }
 }
 

@@ -163,3 +163,263 @@ td {
         gap: 16px;
     }
 }
+
+/* =========================
+   Dashboard Polish Pass
+   ========================= */
+
+body {
+    background:
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 30%),
+        #0b111c;
+}
+
+header,
+.dashboard-header,
+.topbar {
+    border-bottom: 1px solid #263241;
+    padding: 20px 24px;
+    background: rgba(10, 15, 25, 0.92);
+    backdrop-filter: blur(12px);
+}
+
+header h1,
+.dashboard-header h1,
+.topbar h1 {
+    letter-spacing: 0.04em;
+}
+
+button,
+.refresh-btn {
+    background: #2563eb;
+    color: #ffffff;
+    border: 1px solid #3b82f6;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+button:hover,
+.refresh-btn:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.card,
+.panel,
+section {
+    background: rgba(30, 41, 59, 0.88);
+    border: 1px solid #334155;
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+}
+
+.card h2,
+.panel h2,
+section h2 {
+    font-size: 1.35rem;
+    letter-spacing: 0.03em;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+thead {
+    background: rgba(15, 23, 42, 0.65);
+}
+
+th {
+    color: #cbd5e1;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 14px 12px;
+}
+
+td {
+    padding: 13px 12px;
+    border-top: 1px solid #334155;
+    color: #f8fafc;
+}
+
+tr:hover td {
+    background: rgba(51, 65, 85, 0.45);
+}
+
+.badge,
+.severity,
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: lowercase;
+}
+
+.low,
+.severity-low {
+    background: rgba(22, 163, 74, 0.25);
+    color: #86efac;
+}
+
+.medium,
+.severity-medium {
+    background: rgba(234, 88, 12, 0.25);
+    color: #fdba74;
+}
+
+.high,
+.severity-high {
+    background: rgba(220, 38, 38, 0.25);
+    color: #fca5a5;
+}
+
+.status-online,
+.online {
+    color: #86efac;
+}
+
+.status-offline,
+.offline {
+    color: #fca5a5;
+}
+
+.section-scroll,
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.security-events,
+.network-devices {
+    margin-top: 24px;
+}
+
+.security-events table td:first-child {
+    font-family: Consolas, Monaco, monospace;
+    font-size: 0.82rem;
+    color: #cbd5e1;
+}
+
+.network-devices table td:first-child,
+.network-devices table td:nth-child(2) {
+    font-family: Consolas, Monaco, monospace;
+}
+
+main,
+.dashboard-container,
+.container {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.grid,
+.dashboard-grid {
+    gap: 24px;
+}
+
+section {
+    padding: 22px;
+}
+
+/* =========================
+   Top Summary Cards
+   ========================= */
+
+.summary-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.summary-card {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}
+
+.summary-card h3 {
+    margin: 0 0 10px;
+    font-size: 0.9rem;
+    color: #9ca3af;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.summary-card p {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #f9fafb;
+}
+
+.summary-card {
+    border-left: 5px solid #555;
+}
+
+.summary-card.status-good {
+    border-left-color: #22c55e;
+    background: rgba(34, 197, 94, 0.08);
+}
+
+.summary-card.status-warning {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.summary-card.status-danger {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.summary-card.status-neutral {
+    border-left-color: #64748b;
+    background: rgba(100, 116, 139, 0.08);
+}
+
+.summary-card .status-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.summary-card.status-good .status-label {
+    color: #22c55e;
+}
+
+.summary-card.status-warning .status-label {
+    color: #f59e0b;
+}
+
+.summary-card.status-danger .status-label {
+    color: #ef4444;
+}
+
+.summary-card.status-neutral .status-label {
+    color: #94a3b8;
+}
+
+@media (max-width: 900px) {
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .summary-cards {
+        grid-template-columns: 1fr;
+    }
+}

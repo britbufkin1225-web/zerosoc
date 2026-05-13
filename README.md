@@ -224,12 +224,42 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ### Phase 5: Polish and Portfolio Readiness
 
-- [ ] Add screenshots
-- [ ] Add setup instructions
-- [ ] Add Raspberry Pi deployment notes
-- [ ] Add project architecture diagram
-- [ ] Add future improvement section
-- [ ] Final README polish
+- [x] Request logging
+- [x] Request IDs
+- [x] Recent logs helper
+- [x] Metrics helper
+- [x] Security event model
+- [x] SQLite event storage
+- [x] Event filtering
+- [x] Event summary helper
+- [ ] Event-by-ID route
+- [ ] POST event route
+
+### Phase 6: Local Network Monitoring
+
+- [x] Network scanner helpers
+- [x] ARP/MAC detection
+- [x] Device storage
+- [x] Unknown-device detection
+- [ ] `/api/v1/network/scan` route
+- [ ] `/api/v1/devices` route
+
+### Phase 7: Database Storage
+
+- [x] SQLite database
+- [x] Security events table
+- [x] Network devices table
+- [x] Event persistence
+- [x] Device persistence
+- [ ] Optional request log table
+
+### Phase 8: Dashboard UI
+
+- [x] Some backend support exists
+- [ ] Dashboard frontend
+- [ ] Summary cards
+- [ ] Event table
+- [ ] Device table
 
 ## Development Notes
 
