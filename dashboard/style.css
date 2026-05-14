@@ -536,6 +536,22 @@ main,
     color: #e5e7eb;
 }
 
+.section-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid #374151;
+    padding-bottom: 10px;
+}
+
+.section-heading h2 {
+    margin: 0;
+    border-bottom: 0;
+    padding-bottom: 0;
+}
+
 .alert-list {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -594,6 +610,30 @@ main,
     font-size: 0.84rem;
 }
 
+.alert-note {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid #475569;
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.28);
+}
+
+.alert-note span {
+    color: #94a3b8;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.alert-note p {
+    margin: 0;
+    color: #e2e8f0;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
 .alert-actions {
     display: flex;
     flex-wrap: wrap;
@@ -620,6 +660,42 @@ main,
     opacity: 0.7;
 }
 
+.notifications-panel {
+    color: #e5e7eb;
+}
+
+.notification-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.notification-item {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid #334155;
+    border-left: 5px solid #38bdf8;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.58);
+}
+
+.notification-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #94a3b8;
+    font-size: 0.84rem;
+}
+
+.notification-item p {
+    margin: 0;
+    color: #e2e8f0;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
 .empty-state {
     display: grid;
     gap: 6px;
@@ -644,6 +720,10 @@ main,
         grid-template-columns: 1fr;
     }
 
+    .notification-list {
+        grid-template-columns: 1fr;
+    }
+
     .summary-detail-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -653,7 +733,8 @@ main,
     .summary-grid,
     .summary-cards,
     .summary-detail-grid,
-    .alert-list {
+    .alert-list,
+    .notification-list {
         grid-template-columns: 1fr;
     }
 

@@ -195,8 +195,10 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 all_summary = run.get_alert_summary(all_alerts)
 
                 self.assertEqual(resolved["status"], "resolved")
+                self.assertEqual(resolved["note"], "Investigating")
                 self.assertEqual(active_alerts, [])
                 self.assertEqual(all_alerts[0]["status"], "resolved")
+                self.assertEqual(all_alerts[0]["note"], "Investigating")
                 self.assertEqual(all_summary["resolved_alerts"], 1)
                 self.assertEqual(
                     run.get_alerts(status="resolved")[0]["id"],
@@ -223,6 +225,43 @@ class ZeroSOCHelperTests(unittest.TestCase):
 
                 with self.assertRaises(ValueError):
                     run.update_alert_status(low_event["id"], "invalid")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_unresolved_alert_notifications_are_logged(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                high_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="unittest",
+                    message="Repeated failed login from test"
+                )
+                run.create_security_event(
+                    event_type="manual-test",
+                    severity="low",
+                    source="unittest",
+                    message="Low severity event"
+                )
+
+                result = run.notify_unresolved_alerts(channel="dashboard")
+                notifications = run.get_alert_notifications()
+
+                self.assertEqual(result["channel"], "dashboard")
+                self.assertEqual(result["unresolved_alert_count"], 1)
+                self.assertEqual(result["delivered_count"], 1)
+                self.assertEqual(notifications[0]["alert_id"], high_event["id"])
+                self.assertEqual(notifications[0]["channel"], "dashboard")
+                self.assertEqual(notifications[0]["status"], "delivered")
+                self.assertIn("Repeated failed login", notifications[0]["message"])
+
+                run.update_alert_status(high_event["id"], "resolved")
+                resolved_result = run.notify_unresolved_alerts(channel="dashboard")
+
+                self.assertEqual(resolved_result["unresolved_alert_count"], 0)
+                self.assertEqual(resolved_result["delivered_count"], 0)
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 

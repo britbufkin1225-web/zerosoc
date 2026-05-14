@@ -205,6 +205,8 @@ sudo systemctl restart zerosoc
 | GET | `/api/v1/events/{id}` | Retrieve one security event by ID | Yes | Working |
 | GET | `/api/v1/events/summary` | Security event summary counts | Yes | Working |
 | GET | `/api/v1/alerts` | List active high-priority alerts | Yes | Working |
+| GET | `/api/v1/alerts/notifications` | List delivered alert notifications | Yes | Working |
+| POST | `/api/v1/alerts/notifications` | Deliver notifications for unresolved alerts | Yes | Working |
 | POST | `/api/v1/alerts/{id}/status` | Acknowledge, reopen, or resolve an alert | Yes | Working |
 | POST | `/api/v1/events` | Create a new security event | Yes | Working |
 | GET | `/api/v1/devices` | List recently seen network devices | Yes | Working |
@@ -296,6 +298,27 @@ curl.exe -X POST "http://localhost:8000/api/v1/alerts/<alert_id>/status" `
 
 Valid alert statuses are `open`, `acknowledged`, and `resolved`.
 
+### Deliver unresolved alert notifications
+
+This records local notification delivery attempts for active unresolved alerts.
+
+```powershell
+$body = @{
+  channel = "dashboard"
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/notifications" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+### View alert notification history
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/notifications
+```
+
 ### View one event by ID
 
 Replace `<event_id>` with a real event ID returned from `/api/v1/events`.
@@ -356,6 +379,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - High-priority alert endpoint
 - Alert acknowledgement and resolution workflow
 - Dashboard resolved alerts history view
+- Local notification delivery log for unresolved alerts
+- Dashboard alert notification controls and history view
 - Event summary metrics
 - Local system health/status endpoints
 - Local network scanning
@@ -373,7 +398,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ## Planned Next Steps
 
-- Add notification delivery for unresolved alerts
+- Add external notification channels such as webhook or email delivery
 
 ## Project Timeline
 
@@ -484,6 +509,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Add dashboard active alerts panel
 - [x] Add persisted alert acknowledgement and resolution workflow
 - [x] Add dashboard resolved alerts history panel
+- [x] Add local notification delivery for unresolved alerts
+- [x] Add dashboard alert notification history panel
 
 ## Development Notes
 
@@ -491,4 +518,4 @@ ZeroSOC is currently in active development. The backend foundation is functional
 
 Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is notification delivery for unresolved alerts.
+The next major focus is external notification channels such as webhook or email delivery.

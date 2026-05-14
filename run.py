@@ -204,8 +204,24 @@ def init_database():
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alert_id TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            status TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp
         ON request_logs (timestamp)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_alert_notifications_created_at
+        ON alert_notifications (created_at)
     """)
 
     conn.commit()
@@ -490,6 +506,116 @@ def get_alert_summary(alerts):
     }
 
 
+def build_alert_notification_message(alert):
+    severity = str(alert.get("severity") or "unknown").upper()
+    event_type = alert.get("event_type") or "unknown event"
+    source_ip = alert.get("source_ip") or "unknown source"
+    message = alert.get("message") or "No message provided"
+
+    return f"[{severity}] {event_type} from {source_ip}: {message}"
+
+
+def save_alert_notification(alert_id, channel, status, message, created_at=None):
+    created_at = created_at or datetime.now().isoformat()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO alert_notifications (
+            alert_id,
+            channel,
+            status,
+            message,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        alert_id,
+        channel,
+        status,
+        message,
+        created_at
+    ))
+
+    notification_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": notification_id,
+        "alert_id": alert_id,
+        "channel": channel,
+        "status": status,
+        "message": message,
+        "created_at": created_at
+    }
+
+
+def get_alert_notifications(limit=20):
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 20
+
+    limit = max(1, min(limit, 100))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            alert_id,
+            channel,
+            status,
+            message,
+            created_at
+        FROM alert_notifications
+        ORDER BY created_at DESC
+        LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    notifications = []
+
+    for row in rows:
+        notifications.append({
+            "id": row["id"],
+            "alert_id": row["alert_id"],
+            "channel": row["channel"],
+            "status": row["status"],
+            "message": row["message"],
+            "created_at": row["created_at"]
+        })
+
+    return notifications
+
+
+def notify_unresolved_alerts(channel="local"):
+    channel = str(channel or "local").strip().lower() or "local"
+    alerts = get_alerts(limit=100, status="active")
+    notifications = []
+
+    for alert in alerts:
+        message = build_alert_notification_message(alert)
+        notifications.append(save_alert_notification(
+            alert_id=alert["id"],
+            channel=channel,
+            status="delivered",
+            message=message
+        ))
+
+    return {
+        "channel": channel,
+        "unresolved_alert_count": len(alerts),
+        "delivered_count": len(notifications),
+        "notifications": notifications
+    }
+
+
 def is_alert_event(event):
     if event is None:
         return False
@@ -500,7 +626,7 @@ def is_alert_event(event):
     return severity in {"critical", "high"} or "needs-review" in tags
 
 
-def update_alert_status(alert_id, status, note=""):
+def update_alert_status(alert_id, status, note=None):
     status = str(status or "").strip().lower()
 
     if status not in ALERT_STATUSES:
@@ -511,7 +637,24 @@ def update_alert_status(alert_id, status, note=""):
     if not is_alert_event(event):
         return None
 
-    note = str(note or "").strip()
+    if note is None:
+        existing_note = ""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT note FROM alert_states WHERE alert_id = ?",
+            (alert_id,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            existing_note = row["note"] or ""
+
+        note = existing_note
+    else:
+        note = str(note or "").strip()
+
     updated_at = datetime.now().isoformat()
 
     conn = get_db_connection()
@@ -1688,7 +1831,7 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             alert = update_alert_status(
                 alert_id=alert_id,
                 status=data.get("status"),
-                note=data.get("note", "")
+                note=data.get("note")
             )
         except ValueError as error:
             log_request(ctx, 400, str(error))
@@ -1723,6 +1866,37 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "status": "updated",
                 "alert": alert
             },
+            request_id=ctx.request_id
+        )
+
+    def handle_alert_notifications(self, ctx, query_params):
+        limit = query_params.get("limit", ["20"])[0]
+        notifications = get_alert_notifications(limit=limit)
+
+        log_request(ctx, 200, "Alert notifications requested")
+
+        self.send_json_response(
+            200,
+            data={
+                "notifications": notifications,
+                "count": len(notifications),
+                "filters": {
+                    "limit": int(limit) if str(limit).isdigit() else 20
+                }
+            },
+            request_id=ctx.request_id
+        )
+
+    def handle_alert_notification_delivery(self, ctx, data):
+        result = notify_unresolved_alerts(
+            channel=data.get("channel", "local")
+        )
+
+        log_request(ctx, 200, "Unresolved alert notifications delivered")
+
+        self.send_json_response(
+            200,
+            data=result,
             request_id=ctx.request_id
         )
         
@@ -1967,6 +2141,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.handle_alerts(ctx, query_params)
             return
 
+        if endpoint == "/api/v1/alerts/notifications":
+            self.handle_alert_notifications(ctx, query_params)
+            return
+
         if endpoint == "/api/v1/events":
             self.handle_events(ctx, query_params)
             return
@@ -2053,6 +2231,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             handle_create_event(self, ctx, data)
             return
 
+        if endpoint == "/api/v1/alerts/notifications":
+            self.handle_alert_notification_delivery(ctx, data)
+            return
+
         if endpoint.startswith("/api/v1/alerts/") and endpoint.endswith("/status"):
             self.handle_alert_status_update(ctx, endpoint, data)
             return
@@ -2082,6 +2264,7 @@ def run_server():
     print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
     print("  /api/v1/alerts")
+    print("  /api/v1/alerts/notifications")
     print("  /api/v1/alerts/{id}/status")
     print("  /api/v1/devices")
     print("  /api/v1/network/scan")

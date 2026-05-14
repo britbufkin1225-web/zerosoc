@@ -6,10 +6,12 @@ const metricsStatus = document.getElementById("metricsStatus");
 const eventSummary = document.getElementById("eventSummary");
 const alertsPanel = document.getElementById("alertsPanel");
 const resolvedAlertsPanel = document.getElementById("resolvedAlertsPanel");
+const alertNotificationsPanel = document.getElementById("alertNotificationsPanel");
 const eventsTable = document.getElementById("eventsTable");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
 const refreshButton = document.getElementById("refreshButton");
+const notifyAlertsButton = document.getElementById("notifyAlertsButton");
 const apiStatusIndicator = document.getElementById("apiStatusIndicator");
 const apiStatusText = document.getElementById("apiStatusText");
 
@@ -88,6 +90,23 @@ function formatValue(value) {
     }
 
     return value;
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function formatHtmlValue(value) {
+    return escapeHtml(formatValue(value));
+}
+
+function formatAttribute(value) {
+    return escapeHtml(value ?? "");
 }
 
 function renderStatusRows(data) {
@@ -262,38 +281,46 @@ function severityBadge(severity) {
 
 function renderAlertCard(alert, mode = "active") {
     const status = String(alert.status || "open").toLowerCase();
+    const note = String(alert.note || "").trim();
+    const alertId = formatAttribute(alert.id);
 
     return `
         <article class="alert-item alert-${String(alert.severity || "low").toLowerCase()} alert-status-${status}">
             <div class="alert-header">
                 ${severityBadge(alert.severity)}
-                <span class="status-pill">${formatValue(alert.status || "open")}</span>
+                <span class="status-pill">${formatHtmlValue(alert.status || "open")}</span>
             </div>
             <div class="alert-body">
-                <h3>${formatValue(alert.event_type)}</h3>
-                <p>${formatValue(alert.message)}</p>
+                <h3>${formatHtmlValue(alert.event_type)}</h3>
+                <p>${formatHtmlValue(alert.message)}</p>
             </div>
             <div class="alert-meta">
                 <span>${formatTimestamp(alert.timestamp)}</span>
-                <span>${formatValue(alert.source_ip)}</span>
+                <span>${formatHtmlValue(alert.source_ip)}</span>
             </div>
             ${alert.status_updated_at ? `
                 <div class="alert-meta">
                     <span>Updated ${formatTimestamp(alert.status_updated_at)}</span>
                 </div>
             ` : ""}
+            ${note ? `
+                <div class="alert-note">
+                    <span>Acknowledgement note</span>
+                    <p>${escapeHtml(note)}</p>
+                </div>
+            ` : ""}
             <div class="alert-actions">
                 ${mode === "resolved" ? `
-                    <button type="button" data-alert-id="${alert.id}" data-alert-status="open">
+                    <button type="button" data-alert-id="${alertId}" data-alert-status="open" data-alert-note="${formatAttribute(note)}">
                         Reopen
                     </button>
                 ` : `
                     ${status === "open" ? `
-                        <button type="button" data-alert-id="${alert.id}" data-alert-status="acknowledged">
+                        <button type="button" data-alert-id="${alertId}" data-alert-status="acknowledged" data-alert-note="${formatAttribute(note)}">
                             Acknowledge
                         </button>
                     ` : ""}
-                    <button type="button" data-alert-id="${alert.id}" data-alert-status="resolved">
+                    <button type="button" data-alert-id="${alertId}" data-alert-status="resolved" data-alert-note="${formatAttribute(note)}">
                         Resolve
                     </button>
                 `}
@@ -342,9 +369,55 @@ function renderResolvedAlerts(data) {
     `;
 }
 
-async function updateAlertStatus(alertId, status) {
-    await postApi(`/api/v1/alerts/${encodeURIComponent(alertId)}/status`, {
+function renderAlertNotifications(data) {
+    const notifications = Array.isArray(data) ? data : data.notifications || [];
+
+    if (notifications.length === 0) {
+        alertNotificationsPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No alert notifications</strong>
+                <span>Delivered alert notifications will appear here.</span>
+            </div>
+        `;
+        return;
+    }
+
+    alertNotificationsPanel.innerHTML = `
+        <div class="notification-list">
+            ${notifications.map(notification => `
+                <article class="notification-item">
+                    <div class="notification-header">
+                        <span class="status-pill">${formatHtmlValue(notification.status)}</span>
+                        <span>${formatTimestamp(notification.created_at)}</span>
+                    </div>
+                    <p>${formatHtmlValue(notification.message)}</p>
+                    <div class="alert-meta">
+                        <span>${formatHtmlValue(notification.channel)}</span>
+                        <span>${formatHtmlValue(notification.alert_id)}</span>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+async function updateAlertStatus(alertId, status, note) {
+    const payload = {
         status
+    };
+
+    if (note !== undefined) {
+        payload.note = note;
+    }
+
+    await postApi(`/api/v1/alerts/${encodeURIComponent(alertId)}/status`, payload);
+
+    await loadDashboard();
+}
+
+async function deliverAlertNotifications() {
+    await postApi("/api/v1/alerts/notifications", {
+        channel: "dashboard"
     });
 
     await loadDashboard();
@@ -558,17 +631,19 @@ async function loadDashboard() {
     metricsStatus.innerHTML = "Loading metrics...";
     eventSummary.innerHTML = "Loading event summary...";
     alertsPanel.innerHTML = "Loading alerts...";
+    alertNotificationsPanel.innerHTML = "Loading alert notifications...";
     resolvedAlertsPanel.innerHTML = "Loading resolved alerts...";
     eventsTable.innerHTML = "Loading events...";
     devicesTable.innerHTML = "Loading devices...";
     setApiStatus("status-neutral", "API checking");
 
     try {
-        const [systemData, metricsData, eventsSummaryData, alertsData, resolvedAlertsData, eventsData, devicesData] = await Promise.all([
+        const [systemData, metricsData, eventsSummaryData, alertsData, alertNotificationsData, resolvedAlertsData, eventsData, devicesData] = await Promise.all([
             fetchApi("/api/v1/system"),
             fetchApi("/api/v1/metrics"),
             fetchApi("/api/v1/events/summary"),
             fetchApi("/api/v1/alerts"),
+            fetchApi("/api/v1/alerts/notifications"),
             fetchApi("/api/v1/alerts?status=resolved"),
             fetchApi("/api/v1/events"),
             fetchApi("/api/v1/devices")
@@ -578,6 +653,7 @@ async function loadDashboard() {
         const metrics = metricsData.data || metricsData;
         const eventSummaryData = eventsSummaryData.data || eventsSummaryData;
         const alerts = alertsData.data || alertsData;
+        const alertNotifications = alertNotificationsData.data || alertNotificationsData;
         const resolvedAlerts = resolvedAlertsData.data || resolvedAlertsData;
         const events = eventsData.data || eventsData;
         const devices = devicesData.data || devicesData;
@@ -586,6 +662,7 @@ async function loadDashboard() {
         renderMetrics(metrics);
         renderEventSummary(eventSummaryData);
         renderAlerts(alerts);
+        renderAlertNotifications(alertNotifications);
         renderResolvedAlerts(resolvedAlerts);
         renderEvents(events);
         renderDevices(devices);
@@ -599,6 +676,7 @@ async function loadDashboard() {
         metricsStatus.innerHTML = `<p class="error">${error.message}</p>`;
         eventSummary.innerHTML = `<p class="error">${error.message}</p>`;
         alertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        alertNotificationsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         resolvedAlertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
@@ -643,6 +721,19 @@ async function loadDashboard() {
 }
 
 refreshButton.addEventListener("click", loadDashboard);
+notifyAlertsButton.addEventListener("click", async () => {
+    notifyAlertsButton.disabled = true;
+    notifyAlertsButton.textContent = "Notifying...";
+
+    try {
+        await deliverAlertNotifications();
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        notifyAlertsButton.disabled = false;
+        notifyAlertsButton.textContent = "Notify Active Alerts";
+    }
+});
 
 async function handleAlertActionClick(event) {
     const button = event.target.closest("[data-alert-id][data-alert-status]");
@@ -651,11 +742,25 @@ async function handleAlertActionClick(event) {
         return;
     }
 
+    const status = button.dataset.alertStatus;
+    let note;
+
+    if (status === "acknowledged") {
+        note = window.prompt(
+            "Add an acknowledgement note",
+            button.dataset.alertNote || ""
+        );
+
+        if (note === null) {
+            return;
+        }
+    }
+
     button.disabled = true;
     button.textContent = "Updating...";
 
     try {
-        await updateAlertStatus(button.dataset.alertId, button.dataset.alertStatus);
+        await updateAlertStatus(button.dataset.alertId, status, note);
     } catch (error) {
         button.disabled = false;
         button.textContent = "Retry";
