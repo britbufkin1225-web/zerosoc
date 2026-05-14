@@ -3,10 +3,13 @@ const API_KEY = "dev-zero-soc-key";
 
 const systemStatus = document.getElementById("systemStatus");
 const metricsStatus = document.getElementById("metricsStatus");
+const eventSummary = document.getElementById("eventSummary");
 const eventsTable = document.getElementById("eventsTable");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
 const refreshButton = document.getElementById("refreshButton");
+const apiStatusIndicator = document.getElementById("apiStatusIndicator");
+const apiStatusText = document.getElementById("apiStatusText");
 
 async function fetchApi(endpoint) {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -43,6 +46,22 @@ function formatUptime(seconds) {
     return `${minutes}m`;
 }
 
+function formatTimestamp(value) {
+    if (!value) {
+        return "N/A";
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short"
+    }).format(date);
+}
 
 function formatValue(value) {
     if (value === null || value === undefined || value === "") {
@@ -80,7 +99,7 @@ function renderSystem(data) {
         "Machine": data.machine,
         "Python Version": data.python_version,
         "Uptime": formatUptime(data.uptime_seconds),
-        "Current Time": data.current_time,
+        "Current Time": formatTimestamp(data.current_time),
         "CPU Temp": data.cpu_temp_c ? `${data.cpu_temp_c} °C` : "N/A",
         "Disk Total": disk.total_gb ? `${disk.total_gb} GB` : "N/A",
         "Disk Used": disk.used_gb ? `${disk.used_gb} GB` : "N/A",
@@ -109,6 +128,80 @@ function renderMetrics(data) {
     };
 
     metricsStatus.innerHTML = renderStatusRows(metrics);
+}
+
+function getCountMap(summary, primaryKey, fallbackKey) {
+    return summary?.[primaryKey] || summary?.[fallbackKey] || {};
+}
+
+function renderCountList(items, emptyText) {
+    if (items.length === 0) {
+        return `<p class="muted">${emptyText}</p>`;
+    }
+
+    return `
+        <div class="count-list">
+            ${items.map(([label, count]) => `
+                <div class="count-row">
+                    <span>${formatValue(label)}</span>
+                    <strong>${formatValue(count)}</strong>
+                </div>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderEventSummary(summary) {
+    const severityCounts = getCountMap(summary, "by_severity", "severity_counts");
+    const eventTypeCounts = getCountMap(summary, "by_event_type", "event_type_counts");
+    const tagCounts = getCountMap(summary, "by_tag", "tag_counts");
+    const latestEvent = summary.latest_event;
+
+    const sortedSeverities = ["critical", "high", "medium", "low", "unknown"]
+        .filter(severity => severityCounts[severity] !== undefined)
+        .map(severity => [severity, severityCounts[severity]]);
+
+    const topTypes = Object.entries(eventTypeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    const topTags = Object.entries(tagCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6);
+
+    eventSummary.innerHTML = `
+        <div class="summary-detail-grid">
+            <div>
+                <h3>Total Events</h3>
+                <p class="summary-total">${formatValue(summary.total_events)}</p>
+                ${latestEvent ? `
+                    <p class="latest-event">
+                        Latest: ${severityBadge(latestEvent.severity)}
+                        ${formatValue(latestEvent.event_type)}
+                        <span>${formatTimestamp(latestEvent.timestamp)}</span>
+                    </p>
+                ` : `<p class="muted">No latest event yet.</p>`}
+            </div>
+            <div>
+                <h3>Severity</h3>
+                ${renderCountList(sortedSeverities, "No severity counts.")}
+            </div>
+            <div>
+                <h3>Event Types</h3>
+                ${renderCountList(topTypes, "No event type counts.")}
+            </div>
+            <div>
+                <h3>Tags</h3>
+                ${renderCountList(topTags, "No tag counts.")}
+            </div>
+        </div>
+    `;
+}
+
+function setApiStatus(statusClass, text) {
+    apiStatusIndicator.classList.remove("status-good", "status-warning", "status-danger", "status-neutral");
+    apiStatusIndicator.classList.add(statusClass);
+    apiStatusText.textContent = text;
 }
 
 function setSummaryCardStatus(cardId, labelId, statusClass, labelText) {
@@ -170,7 +263,7 @@ function renderEvents(data) {
                         <td>${formatValue(event.event_type || event.type)}</td>
                         <td>${severityBadge(event.severity)}</td>
                         <td>${formatValue(event.message || event.description)}</td>
-                        <td>${formatValue(event.timestamp || event.created_at)}</td>
+                        <td>${formatTimestamp(event.timestamp || event.created_at)}</td>
                     </tr>
                 `).join("")}
             </tbody>
@@ -204,7 +297,7 @@ function renderDevices(data) {
                         <td>${formatValue(device.mac || device.mac_address)}</td>
                         <td>${formatValue(device.hostname)}</td>
                         <td>${formatValue(device.status || device.device_status || "unknown")}</td>
-                        <td>${formatValue(device.last_seen)}</td>
+                        <td>${formatTimestamp(device.last_seen)}</td>
                     </tr>
                 `).join("")}
             </tbody>
@@ -212,7 +305,7 @@ function renderDevices(data) {
     `;
 }
 
-function updateSummaryCards(system, events, devices, metrics) {
+function updateSummaryCards(system, events, devices, metrics, eventSummaryData) {
     const systemStatusCard = document.getElementById("summary-system-status");
     const devicesCard = document.getElementById("summary-devices");
     const eventsCard = document.getElementById("summary-events");
@@ -220,6 +313,7 @@ function updateSummaryCards(system, events, devices, metrics) {
 
     const eventList = events.events || events || [];
     const deviceList = devices.devices || devices || [];
+    const severityCounts = getCountMap(eventSummaryData, "by_severity", "severity_counts");
 
     systemStatusCard.textContent = "Online";
     const recentErrors = metrics.requests?.recent_error_count || 0;
@@ -230,7 +324,7 @@ function updateSummaryCards(system, events, devices, metrics) {
     } else {
         apiCard.textContent = `${totalRequests} requests`;
     }
-    eventsCard.textContent = eventList.length;
+    eventsCard.textContent = eventSummaryData.total_events ?? eventList.length;
     devicesCard.textContent = deviceList.length;
 
     setSummaryCardStatus(
@@ -240,13 +334,9 @@ function updateSummaryCards(system, events, devices, metrics) {
         "Online"
     );
 
-    const highEvents = eventList.filter(event =>
-        String(event.severity || "").toLowerCase() === "high"
-    ).length;
+    const highEvents = (severityCounts.high || 0) + (severityCounts.critical || 0);
 
-    const mediumEvents = eventList.filter(event =>
-        String(event.severity || "").toLowerCase() === "medium"
-    ).length;
+    const mediumEvents = severityCounts.medium || 0;
 
     if (highEvents > 0) {
         setSummaryCardStatus(
@@ -318,35 +408,43 @@ function updateSummaryCards(system, events, devices, metrics) {
 async function loadDashboard() {
     systemStatus.innerHTML = "Loading system data...";
     metricsStatus.innerHTML = "Loading metrics...";
+    eventSummary.innerHTML = "Loading event summary...";
     eventsTable.innerHTML = "Loading events...";
     devicesTable.innerHTML = "Loading devices...";
+    setApiStatus("status-neutral", "API checking");
 
     try {
-        const [systemData, metricsData, eventsData, devicesData] = await Promise.all([
+        const [systemData, metricsData, eventsSummaryData, eventsData, devicesData] = await Promise.all([
             fetchApi("/api/v1/system"),
             fetchApi("/api/v1/metrics"),
+            fetchApi("/api/v1/events/summary"),
             fetchApi("/api/v1/events"),
             fetchApi("/api/v1/devices")
         ]);
 
         const system = systemData.data || systemData;
         const metrics = metricsData.data || metricsData;
+        const eventSummaryData = eventsSummaryData.data || eventsSummaryData;
         const events = eventsData.data || eventsData;
         const devices = devicesData.data || devicesData;
 
         renderSystem(system);
         renderMetrics(metrics);
+        renderEventSummary(eventSummaryData);
         renderEvents(events);
         renderDevices(devices);
 
-        updateSummaryCards(system, events, devices, metrics);
+        updateSummaryCards(system, events, devices, metrics, eventSummaryData);
 
-        lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
+        lastUpdated.textContent = `Last updated: ${formatTimestamp(new Date().toISOString())}`;
+        setApiStatus("status-good", "API online");
     } catch (error) {
         systemStatus.innerHTML = `<p class="error">${error.message}</p>`;
         metricsStatus.innerHTML = `<p class="error">${error.message}</p>`;
+        eventSummary.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
+        setApiStatus("status-danger", "API offline");
 
 
         setSummaryCardStatus(

@@ -13,7 +13,13 @@
             <p>Lightweight local security operations monitor</p>
         </div>
 
-        <button id="refreshButton">Refresh</button>
+        <div class="header-actions">
+            <div id="apiStatusIndicator" class="api-status status-neutral" aria-live="polite">
+                <span class="api-status-dot"></span>
+                <span id="apiStatusText">API checking</span>
+            </div>
+            <button id="refreshButton">Refresh</button>
+        </div>
     </header>
 
     <section class="summary-grid">
@@ -54,6 +60,13 @@
             <h2>Metrics</h2>
             <div id="metricsStatus" class="data-block">
                 Loading metrics...
+            </div>
+        </section>
+
+        <section class="card wide">
+            <h2>Event Summary</h2>
+            <div id="eventSummary" class="summary-details">
+                Loading event summary...
             </div>
         </section>
 

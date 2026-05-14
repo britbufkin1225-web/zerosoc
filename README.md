@@ -23,7 +23,13 @@ ZeroSOC currently has a working Python backend with structured API routing, SQLi
 
 The backend cleanup pass is complete. Core GET and POST routes are wired consistently, and the dashboard now fetches live backend data for system status, metrics, recent security events, and network devices.
 
+The dashboard polish pass is complete. The dashboard now displays event summary data from `/api/v1/events/summary`, formats timestamps for readability, shows a visible API status indicator, and includes a project screenshot below.
+
 The active backend entry point is `run.py`. The `app/` package is currently reserved for future modularization work and should not be treated as the production server implementation yet.
+
+## Dashboard Preview
+
+![ZeroSOC dashboard screenshot](docs/dashboard.png)
 
 ## Quick Start
 
@@ -200,7 +206,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 - Polish dashboard layout and responsive behavior
 - Display richer event summary details
-- Add screenshots to the README
+- Add Raspberry Pi deployment notes
 - Add setup instructions for Raspberry Pi deployment
 - Expand route and database test coverage
 - Add future alerting support
@@ -247,7 +253,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Display recent security events
 - [x] Display network devices
 - [x] Add manual refresh button
-- [ ] Display event summary
+- [x] Display event summary
 
 ### Phase 5: Polish and Portfolio Readiness
 
@@ -288,12 +294,12 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Summary cards
 - [x] Event table
 - [x] Device table
-- [ ] Dashboard screenshots
+- [x] Dashboard screenshots
 
 ## Development Notes
 
 ZeroSOC is currently in active development. The backend foundation is functional and tested, with protected API endpoints, request logging, SQLite persistence, security event storage, network device tracking, and basic metrics.
 
-Phase 4 dashboard work has started. A basic web dashboard now loads in the browser, connects to the backend API, and displays system health, metrics, recent security events, and network devices. The project now has a working visual layer, making it easier to demonstrate as a cybersecurity/backend portfolio project.
+Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is dashboard polish, including cleaner timestamp formatting, API status indicators, improved event summaries, screenshots, and final README presentation.
+The next major focus is Raspberry Pi deployment documentation, expanded test coverage, and future alerting support.
