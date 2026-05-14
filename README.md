@@ -351,7 +351,6 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 ## Planned Next Steps
 
 - Add alert acknowledgement workflow
-- Add dashboard alert panel
 
 ## Project Timeline
 
@@ -458,6 +457,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Add `/api/v1/alerts` route
 - [x] Add alert summary counts
 - [x] Add alert helper tests
+- [x] Add dashboard alert summary card
+- [x] Add dashboard active alerts panel
 
 ## Development Notes
 
@@ -465,4 +466,4 @@ ZeroSOC is currently in active development. The backend foundation is functional
 
 Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is alert acknowledgement workflow and dashboard alert display.
+The next major focus is alert acknowledgement workflow.

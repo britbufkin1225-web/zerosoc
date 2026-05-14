@@ -4,6 +4,7 @@ const API_KEY = "dev-zero-soc-key";
 const systemStatus = document.getElementById("systemStatus");
 const metricsStatus = document.getElementById("metricsStatus");
 const eventSummary = document.getElementById("eventSummary");
+const alertsPanel = document.getElementById("alertsPanel");
 const eventsTable = document.getElementById("eventsTable");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
@@ -226,6 +227,10 @@ function setSummaryCardStatus(cardId, labelId, statusClass, labelText) {
 function severityBadge(severity) {
     const cleanSeverity = String(severity || "low").toLowerCase();
 
+    if (cleanSeverity === "critical") {
+        return `<span class="badge badge-critical">critical</span>`;
+    }
+
     if (cleanSeverity === "high") {
         return `<span class="badge badge-high">high</span>`;
     }
@@ -235,6 +240,41 @@ function severityBadge(severity) {
     }
 
     return `<span class="badge badge-low">${cleanSeverity}</span>`;
+}
+
+function renderAlerts(data) {
+    const alerts = Array.isArray(data) ? data : data.alerts || [];
+
+    if (alerts.length === 0) {
+        alertsPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No active alerts</strong>
+                <span>High-priority event signals are clear.</span>
+            </div>
+        `;
+        return;
+    }
+
+    alertsPanel.innerHTML = `
+        <div class="alert-list">
+            ${alerts.map(alert => `
+                <article class="alert-item alert-${String(alert.severity || "low").toLowerCase()}">
+                    <div class="alert-header">
+                        ${severityBadge(alert.severity)}
+                        <span class="status-pill">${formatValue(alert.status || "open")}</span>
+                    </div>
+                    <div class="alert-body">
+                        <h3>${formatValue(alert.event_type)}</h3>
+                        <p>${formatValue(alert.message)}</p>
+                    </div>
+                    <div class="alert-meta">
+                        <span>${formatTimestamp(alert.timestamp)}</span>
+                        <span>${formatValue(alert.source_ip)}</span>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
 }
 
 function renderEvents(data) {
@@ -305,13 +345,16 @@ function renderDevices(data) {
     `;
 }
 
-function updateSummaryCards(system, events, devices, metrics, eventSummaryData) {
+function updateSummaryCards(system, events, alerts, devices, metrics, eventSummaryData) {
     const systemStatusCard = document.getElementById("summary-system-status");
+    const alertsCard = document.getElementById("summary-alerts");
     const devicesCard = document.getElementById("summary-devices");
     const eventsCard = document.getElementById("summary-events");
     const apiCard = document.getElementById("summary-api");
 
     const eventList = events.events || events || [];
+    const alertList = alerts.alerts || alerts || [];
+    const alertSummary = alerts.summary || {};
     const deviceList = devices.devices || devices || [];
     const severityCounts = getCountMap(eventSummaryData, "by_severity", "severity_counts");
 
@@ -325,6 +368,7 @@ function updateSummaryCards(system, events, devices, metrics, eventSummaryData) 
         apiCard.textContent = `${totalRequests} requests`;
     }
     eventsCard.textContent = eventSummaryData.total_events ?? eventList.length;
+    alertsCard.textContent = alertSummary.open_alerts ?? alertList.length;
     devicesCard.textContent = deviceList.length;
 
     setSummaryCardStatus(
@@ -356,6 +400,37 @@ function updateSummaryCards(system, events, devices, metrics, eventSummaryData) 
         setSummaryCardStatus(
             "events-summary-card",
             "events-summary-label",
+            "status-good",
+            "Clear"
+        );
+    }
+
+    const criticalAlerts = alertList.filter(alert =>
+        String(alert.severity || "").toLowerCase() === "critical"
+    ).length;
+
+    const highAlerts = alertList.filter(alert =>
+        String(alert.severity || "").toLowerCase() === "high"
+    ).length;
+
+    if (criticalAlerts > 0) {
+        setSummaryCardStatus(
+            "alerts-summary-card",
+            "alerts-summary-label",
+            "status-danger",
+            "Critical"
+        );
+    } else if (highAlerts > 0 || alertList.length > 0) {
+        setSummaryCardStatus(
+            "alerts-summary-card",
+            "alerts-summary-label",
+            "status-warning",
+            "Open"
+        );
+    } else {
+        setSummaryCardStatus(
+            "alerts-summary-card",
+            "alerts-summary-label",
             "status-good",
             "Clear"
         );
@@ -409,15 +484,17 @@ async function loadDashboard() {
     systemStatus.innerHTML = "Loading system data...";
     metricsStatus.innerHTML = "Loading metrics...";
     eventSummary.innerHTML = "Loading event summary...";
+    alertsPanel.innerHTML = "Loading alerts...";
     eventsTable.innerHTML = "Loading events...";
     devicesTable.innerHTML = "Loading devices...";
     setApiStatus("status-neutral", "API checking");
 
     try {
-        const [systemData, metricsData, eventsSummaryData, eventsData, devicesData] = await Promise.all([
+        const [systemData, metricsData, eventsSummaryData, alertsData, eventsData, devicesData] = await Promise.all([
             fetchApi("/api/v1/system"),
             fetchApi("/api/v1/metrics"),
             fetchApi("/api/v1/events/summary"),
+            fetchApi("/api/v1/alerts"),
             fetchApi("/api/v1/events"),
             fetchApi("/api/v1/devices")
         ]);
@@ -425,16 +502,18 @@ async function loadDashboard() {
         const system = systemData.data || systemData;
         const metrics = metricsData.data || metricsData;
         const eventSummaryData = eventsSummaryData.data || eventsSummaryData;
+        const alerts = alertsData.data || alertsData;
         const events = eventsData.data || eventsData;
         const devices = devicesData.data || devicesData;
 
         renderSystem(system);
         renderMetrics(metrics);
         renderEventSummary(eventSummaryData);
+        renderAlerts(alerts);
         renderEvents(events);
         renderDevices(devices);
 
-        updateSummaryCards(system, events, devices, metrics, eventSummaryData);
+        updateSummaryCards(system, events, alerts, devices, metrics, eventSummaryData);
 
         lastUpdated.textContent = `Last updated: ${formatTimestamp(new Date().toISOString())}`;
         setApiStatus("status-good", "API online");
@@ -442,6 +521,7 @@ async function loadDashboard() {
         systemStatus.innerHTML = `<p class="error">${error.message}</p>`;
         metricsStatus.innerHTML = `<p class="error">${error.message}</p>`;
         eventSummary.innerHTML = `<p class="error">${error.message}</p>`;
+        alertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
         setApiStatus("status-danger", "API offline");
@@ -457,6 +537,13 @@ async function loadDashboard() {
         setSummaryCardStatus(
             "events-summary-card",
             "events-summary-label",
+            "status-neutral",
+            "Unknown"
+        );
+
+        setSummaryCardStatus(
+            "alerts-summary-card",
+            "alerts-summary-label",
             "status-neutral",
             "Unknown"
         );
