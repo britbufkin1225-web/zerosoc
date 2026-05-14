@@ -355,6 +355,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - Security event auto-tagging
 - High-priority alert endpoint
 - Alert acknowledgement and resolution workflow
+- Dashboard resolved alerts history view
 - Event summary metrics
 - Local system health/status endpoints
 - Local network scanning
@@ -482,6 +483,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Add dashboard alert summary card
 - [x] Add dashboard active alerts panel
 - [x] Add persisted alert acknowledgement and resolution workflow
+- [x] Add dashboard resolved alerts history panel
 
 ## Development Notes
 

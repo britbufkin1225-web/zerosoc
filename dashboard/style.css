@@ -564,6 +564,11 @@ main,
     background: rgba(120, 53, 15, 0.16);
 }
 
+.alert-status-resolved {
+    border-left-color: #22c55e;
+    background: rgba(20, 83, 45, 0.16);
+}
+
 .alert-header,
 .alert-meta {
     display: flex;

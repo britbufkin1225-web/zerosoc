@@ -198,6 +198,10 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 self.assertEqual(active_alerts, [])
                 self.assertEqual(all_alerts[0]["status"], "resolved")
                 self.assertEqual(all_summary["resolved_alerts"], 1)
+                self.assertEqual(
+                    run.get_alerts(status="resolved")[0]["id"],
+                    high_event["id"]
+                )
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 

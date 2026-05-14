@@ -5,6 +5,7 @@ const systemStatus = document.getElementById("systemStatus");
 const metricsStatus = document.getElementById("metricsStatus");
 const eventSummary = document.getElementById("eventSummary");
 const alertsPanel = document.getElementById("alertsPanel");
+const resolvedAlertsPanel = document.getElementById("resolvedAlertsPanel");
 const eventsTable = document.getElementById("eventsTable");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
@@ -259,6 +260,48 @@ function severityBadge(severity) {
     return `<span class="badge badge-low">${cleanSeverity}</span>`;
 }
 
+function renderAlertCard(alert, mode = "active") {
+    const status = String(alert.status || "open").toLowerCase();
+
+    return `
+        <article class="alert-item alert-${String(alert.severity || "low").toLowerCase()} alert-status-${status}">
+            <div class="alert-header">
+                ${severityBadge(alert.severity)}
+                <span class="status-pill">${formatValue(alert.status || "open")}</span>
+            </div>
+            <div class="alert-body">
+                <h3>${formatValue(alert.event_type)}</h3>
+                <p>${formatValue(alert.message)}</p>
+            </div>
+            <div class="alert-meta">
+                <span>${formatTimestamp(alert.timestamp)}</span>
+                <span>${formatValue(alert.source_ip)}</span>
+            </div>
+            ${alert.status_updated_at ? `
+                <div class="alert-meta">
+                    <span>Updated ${formatTimestamp(alert.status_updated_at)}</span>
+                </div>
+            ` : ""}
+            <div class="alert-actions">
+                ${mode === "resolved" ? `
+                    <button type="button" data-alert-id="${alert.id}" data-alert-status="open">
+                        Reopen
+                    </button>
+                ` : `
+                    ${status === "open" ? `
+                        <button type="button" data-alert-id="${alert.id}" data-alert-status="acknowledged">
+                            Acknowledge
+                        </button>
+                    ` : ""}
+                    <button type="button" data-alert-id="${alert.id}" data-alert-status="resolved">
+                        Resolve
+                    </button>
+                `}
+            </div>
+        </article>
+    `;
+}
+
 function renderAlerts(data) {
     const alerts = Array.isArray(data) ? data : data.alerts || [];
 
@@ -274,32 +317,27 @@ function renderAlerts(data) {
 
     alertsPanel.innerHTML = `
         <div class="alert-list">
-            ${alerts.map(alert => `
-                <article class="alert-item alert-${String(alert.severity || "low").toLowerCase()}">
-                    <div class="alert-header">
-                        ${severityBadge(alert.severity)}
-                        <span class="status-pill">${formatValue(alert.status || "open")}</span>
-                    </div>
-                    <div class="alert-body">
-                        <h3>${formatValue(alert.event_type)}</h3>
-                        <p>${formatValue(alert.message)}</p>
-                    </div>
-                    <div class="alert-meta">
-                        <span>${formatTimestamp(alert.timestamp)}</span>
-                        <span>${formatValue(alert.source_ip)}</span>
-                    </div>
-                    <div class="alert-actions">
-                        ${String(alert.status || "open").toLowerCase() === "open" ? `
-                            <button type="button" data-alert-id="${alert.id}" data-alert-status="acknowledged">
-                                Acknowledge
-                            </button>
-                        ` : ""}
-                        <button type="button" data-alert-id="${alert.id}" data-alert-status="resolved">
-                            Resolve
-                        </button>
-                    </div>
-                </article>
-            `).join("")}
+            ${alerts.map(alert => renderAlertCard(alert)).join("")}
+        </div>
+    `;
+}
+
+function renderResolvedAlerts(data) {
+    const alerts = Array.isArray(data) ? data : data.alerts || [];
+
+    if (alerts.length === 0) {
+        resolvedAlertsPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No resolved alerts</strong>
+                <span>Resolved alert history will appear here.</span>
+            </div>
+        `;
+        return;
+    }
+
+    resolvedAlertsPanel.innerHTML = `
+        <div class="alert-list">
+            ${alerts.map(alert => renderAlertCard(alert, "resolved")).join("")}
         </div>
     `;
 }
@@ -520,16 +558,18 @@ async function loadDashboard() {
     metricsStatus.innerHTML = "Loading metrics...";
     eventSummary.innerHTML = "Loading event summary...";
     alertsPanel.innerHTML = "Loading alerts...";
+    resolvedAlertsPanel.innerHTML = "Loading resolved alerts...";
     eventsTable.innerHTML = "Loading events...";
     devicesTable.innerHTML = "Loading devices...";
     setApiStatus("status-neutral", "API checking");
 
     try {
-        const [systemData, metricsData, eventsSummaryData, alertsData, eventsData, devicesData] = await Promise.all([
+        const [systemData, metricsData, eventsSummaryData, alertsData, resolvedAlertsData, eventsData, devicesData] = await Promise.all([
             fetchApi("/api/v1/system"),
             fetchApi("/api/v1/metrics"),
             fetchApi("/api/v1/events/summary"),
             fetchApi("/api/v1/alerts"),
+            fetchApi("/api/v1/alerts?status=resolved"),
             fetchApi("/api/v1/events"),
             fetchApi("/api/v1/devices")
         ]);
@@ -538,6 +578,7 @@ async function loadDashboard() {
         const metrics = metricsData.data || metricsData;
         const eventSummaryData = eventsSummaryData.data || eventsSummaryData;
         const alerts = alertsData.data || alertsData;
+        const resolvedAlerts = resolvedAlertsData.data || resolvedAlertsData;
         const events = eventsData.data || eventsData;
         const devices = devicesData.data || devicesData;
 
@@ -545,6 +586,7 @@ async function loadDashboard() {
         renderMetrics(metrics);
         renderEventSummary(eventSummaryData);
         renderAlerts(alerts);
+        renderResolvedAlerts(resolvedAlerts);
         renderEvents(events);
         renderDevices(devices);
 
@@ -557,6 +599,7 @@ async function loadDashboard() {
         metricsStatus.innerHTML = `<p class="error">${error.message}</p>`;
         eventSummary.innerHTML = `<p class="error">${error.message}</p>`;
         alertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        resolvedAlertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
         setApiStatus("status-danger", "API offline");
@@ -601,7 +644,7 @@ async function loadDashboard() {
 
 refreshButton.addEventListener("click", loadDashboard);
 
-alertsPanel.addEventListener("click", async (event) => {
+async function handleAlertActionClick(event) {
     const button = event.target.closest("[data-alert-id][data-alert-status]");
 
     if (!button) {
@@ -618,6 +661,9 @@ alertsPanel.addEventListener("click", async (event) => {
         button.textContent = "Retry";
         setApiStatus("status-danger", error.message);
     }
-});
+}
+
+alertsPanel.addEventListener("click", handleAlertActionClick);
+resolvedAlertsPanel.addEventListener("click", handleAlertActionClick);
 
 loadDashboard();
