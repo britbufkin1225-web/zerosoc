@@ -56,6 +56,11 @@ body {
     box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.18);
 }
 
+.api-status.status-neutral .api-status-dot {
+    background: #64748b;
+    box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.18);
+}
+
 .api-status.status-good .api-status-dot {
     background: #22c55e;
     box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
