@@ -4,7 +4,7 @@ ZeroSOC is a lightweight Raspberry Pi Zero 2 W-powered security operations dashb
 
 ## Project Overview
 
-ZeroSOC is being built as a cybersecurity/backend portfolio project. The goal is to create a small but practical security monitoring system that can run on lightweight hardware, expose clean backend API endpoints, track activity, and eventually display security data in a web dashboard.
+ZeroSOC is being built as a cybersecurity/backend portfolio project. The goal is to create a small but practical security monitoring system that can run on lightweight hardware, expose clean backend API endpoints, track activity, and display security data in a web dashboard.
 
 ## Project Goals
 
@@ -21,7 +21,35 @@ ZeroSOC is being built as a cybersecurity/backend portfolio project. The goal is
 
 ZeroSOC currently has a working Python backend with structured API routing, SQLite persistence, API key authentication, request logging, local system status endpoints, security event storage, network device scanning, and basic metrics.
 
-The backend cleanup pass is complete. Core GET and POST routes are now wired consistently and tested.
+The backend cleanup pass is complete. Core GET and POST routes are wired consistently, and the dashboard now fetches live backend data for system status, metrics, recent security events, and network devices.
+
+The active backend entry point is `run.py`. The `app/` package is currently reserved for future modularization work and should not be treated as the production server implementation yet.
+
+## Quick Start
+
+Run the backend:
+
+```powershell
+python run.py
+```
+
+Then open the dashboard in a browser:
+
+```text
+dashboard/index.html
+```
+
+Run the test suite:
+
+```powershell
+python -m unittest discover -s tests
+```
+
+Protected API endpoints use the development API key unless `ZEROSOC_API_KEY` is set:
+
+```http
+X-API-Key: dev-zero-soc-key
+```
 
 ## API Endpoints
 
@@ -165,17 +193,16 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - Python
 - SQLite
 - Raspberry Pi OS Lite
-- HTML/CSS/JavaScript planned for dashboard
+- HTML/CSS/JavaScript dashboard
 - GitHub for version control
 
 ## Planned Next Steps
 
-- Add a basic web dashboard
-- Display system status, event counts, and device data
-- Add dashboard API fetch logic
-- Improve frontend layout and styling
+- Polish dashboard layout and responsive behavior
+- Display richer event summary details
 - Add screenshots to the README
 - Add setup instructions for Raspberry Pi deployment
+- Expand route and database test coverage
 - Add future alerting support
 
 ## Project Timeline
@@ -228,12 +255,13 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Request IDs
 - [x] Recent logs helper
 - [x] Metrics helper
+- [x] Basic helper/database tests
 - [x] Security event model
 - [x] SQLite event storage
 - [x] Event filtering
 - [x] Event summary helper
-- [ ] Event-by-ID route
-- [ ] POST event route
+- [x] Event-by-ID route
+- [x] POST event route
 
 ### Phase 6: Local Network Monitoring
 
@@ -241,8 +269,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] ARP/MAC detection
 - [x] Device storage
 - [x] Unknown-device detection
-- [ ] `/api/v1/network/scan` route
-- [ ] `/api/v1/devices` route
+- [x] `/api/v1/network/scan` route
+- [x] `/api/v1/devices` route
 
 ### Phase 7: Database Storage
 
@@ -255,11 +283,12 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ### Phase 8: Dashboard UI
 
-- [x] Some backend support exists
-- [ ] Dashboard frontend
-- [ ] Summary cards
-- [ ] Event table
-- [ ] Device table
+- [x] Backend API support exists
+- [x] Dashboard frontend
+- [x] Summary cards
+- [x] Event table
+- [x] Device table
+- [ ] Dashboard screenshots
 
 ## Development Notes
 
