@@ -57,6 +57,143 @@ Protected API endpoints use the development API key unless `ZEROSOC_API_KEY` is 
 X-API-Key: dev-zero-soc-key
 ```
 
+## Raspberry Pi Deployment
+
+These steps target Raspberry Pi OS Lite on a Raspberry Pi Zero 2 W or similar small home-lab device.
+
+### 1. Prepare the Pi
+
+Update the OS and install Git:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y git
+```
+
+Python 3 is included with Raspberry Pi OS. ZeroSOC currently uses only the Python standard library, so no Python package install is required.
+
+### 2. Clone the project
+
+```bash
+cd ~
+git clone https://github.com/britbufkin1225-web/zerosoc.git
+cd zerosoc
+```
+
+If you are using a private fork or a different remote, replace the repository URL with your own.
+
+### 3. Set an API key
+
+For local development, ZeroSOC falls back to `dev-zero-soc-key`. On a Pi, set your own key before starting the server:
+
+```bash
+export ZEROSOC_API_KEY="replace-with-a-long-local-key"
+```
+
+To make that key persistent for a shell session user, add the export line to `~/.bashrc`, then reload it:
+
+```bash
+source ~/.bashrc
+```
+
+### 4. Run the backend
+
+```bash
+python3 run.py
+```
+
+The backend listens on port `8000`:
+
+```text
+http://<pi-ip-address>:8000
+```
+
+Check the API from another machine on the same network:
+
+```bash
+curl http://<pi-ip-address>:8000/api/v1/health
+curl -H "X-API-Key: replace-with-a-long-local-key" http://<pi-ip-address>:8000/api/v1/system
+```
+
+### 5. Open the dashboard
+
+The dashboard is a static HTML page in `dashboard/index.html`.
+
+For the simplest local demo, open the file directly on the machine where you are viewing it. If you want to view the dashboard from another computer, serve the dashboard directory from the Pi:
+
+```bash
+cd ~/zerosoc/dashboard
+python3 -m http.server 8080
+```
+
+Then open:
+
+```text
+http://<pi-ip-address>:8080
+```
+
+The dashboard JavaScript currently points at `http://localhost:8000`. If you view the dashboard from another computer, update `API_BASE_URL` in `dashboard/app.js` to the Pi address, for example:
+
+```javascript
+const API_BASE_URL = "http://<pi-ip-address>:8000";
+```
+
+### 6. Optional systemd service
+
+Create a service file so the backend can start on boot:
+
+```bash
+sudo nano /etc/systemd/system/zerosoc.service
+```
+
+Example service:
+
+```ini
+[Unit]
+Description=ZeroSOC backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/zerosoc
+Environment=ZEROSOC_API_KEY=replace-with-a-long-local-key
+ExecStart=/usr/bin/python3 /home/pi/zerosoc/run.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+If your Pi username is not `pi`, replace `/home/pi/zerosoc` with the correct project path.
+
+Enable and start the service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable zerosoc
+sudo systemctl start zerosoc
+sudo systemctl status zerosoc
+```
+
+View logs:
+
+```bash
+journalctl -u zerosoc -f
+```
+
+### 7. Update the deployment
+
+Pull the latest code and restart the service:
+
+```bash
+cd ~/zerosoc
+git pull
+sudo systemctl restart zerosoc
+```
+
 ## API Endpoints
 
 | Method | Endpoint | Description | Auth Required | Status |
@@ -67,6 +204,7 @@ X-API-Key: dev-zero-soc-key
 | GET | `/api/v1/events` | List stored security events | Yes | Working |
 | GET | `/api/v1/events/{id}` | Retrieve one security event by ID | Yes | Working |
 | GET | `/api/v1/events/summary` | Security event summary counts | Yes | Working |
+| GET | `/api/v1/alerts` | List active high-priority alerts | Yes | Working |
 | POST | `/api/v1/events` | Create a new security event | Yes | Working |
 | GET | `/api/v1/devices` | List recently seen network devices | Yes | Working |
 | GET | `/api/v1/network/scan` | Scan local network devices | Yes | Working |
@@ -131,6 +269,12 @@ curl.exe -X POST "http://localhost:8000/api/v1/events" `
 curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/events/summary
 ```
 
+### View active alerts
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts
+```
+
 ### View one event by ID
 
 Replace `<event_id>` with a real event ID returned from `/api/v1/events`.
@@ -185,8 +329,10 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - Request ID tracking
 - Structured request logging
 - SQLite database storage
+- SQLite request log persistence
 - Security event creation and retrieval
 - Security event auto-tagging
+- High-priority alert endpoint
 - Event summary metrics
 - Local system health/status endpoints
 - Local network scanning
@@ -204,12 +350,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ## Planned Next Steps
 
-- Polish dashboard layout and responsive behavior
-- Display richer event summary details
-- Add Raspberry Pi deployment notes
-- Add setup instructions for Raspberry Pi deployment
-- Expand route and database test coverage
-- Add future alerting support
+- Add alert acknowledgement workflow
+- Add dashboard alert panel
 
 ## Project Timeline
 
@@ -285,7 +427,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Network devices table
 - [x] Event persistence
 - [x] Device persistence
-- [ ] Optional request log table
+- [x] Optional request log table
 
 ### Phase 8: Dashboard UI
 
@@ -296,10 +438,31 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Device table
 - [x] Dashboard screenshots
 
+### Phase 9: Raspberry Pi Deployment
+
+- [x] Add Raspberry Pi OS setup steps
+- [x] Add backend run instructions
+- [x] Add dashboard access notes
+- [x] Add optional systemd service example
+- [x] Add deployment update workflow
+
+### Phase 10: Test Coverage
+
+- [x] Add event summary helper coverage
+- [x] Add network device processing coverage
+- [x] Add request log metrics coverage
+
+### Phase 11: Alerting
+
+- [x] Add active alerts helper
+- [x] Add `/api/v1/alerts` route
+- [x] Add alert summary counts
+- [x] Add alert helper tests
+
 ## Development Notes
 
 ZeroSOC is currently in active development. The backend foundation is functional and tested, with protected API endpoints, request logging, SQLite persistence, security event storage, network device tracking, and basic metrics.
 
 Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is Raspberry Pi deployment documentation, expanded test coverage, and future alerting support.
+The next major focus is alert acknowledgement workflow and dashboard alert display.

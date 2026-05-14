@@ -54,6 +54,7 @@ PROTECTED_ENDPOINTS = {
     "/api/v1/logs/recent",
     "/api/v1/events",
     "/api/v1/events/summary",
+    "/api/v1/alerts",
     "/api/v1/devices",
     "/api/v1/network/scan",
     "/api/v1/metrics"
@@ -175,6 +176,25 @@ def init_database():
             first_seen TEXT NOT NULL,
             last_seen TEXT NOT NULL
         )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS request_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            method TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            client_ip TEXT NOT NULL,
+            status_code INTEGER NOT NULL,
+            latency_ms REAL NOT NULL,
+            message TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp
+        ON request_logs (timestamp)
     """)
 
     conn.commit()
@@ -359,6 +379,75 @@ def get_events_summary():
         conn.close()
 
     return summary
+
+
+def get_alerts(limit=20):
+    """
+    Builds active alerts from high-priority security events.
+    Alerts are derived from high/critical severity events and events tagged
+    for review so they stay in sync with the event store.
+    """
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 20
+
+    limit = max(1, min(limit, 100))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            timestamp,
+            source_ip,
+            event_type,
+            severity,
+            message,
+            tag
+        FROM security_events
+        WHERE severity IN ('critical', 'high')
+           OR tag LIKE '%needs-review%'
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    alerts = []
+
+    for row in rows:
+        tags = row["tag"].split(",") if row["tag"] else []
+
+        alerts.append({
+            "id": row["id"],
+            "timestamp": row["timestamp"],
+            "source_ip": row["source_ip"],
+            "event_type": row["event_type"],
+            "severity": row["severity"],
+            "message": row["message"],
+            "tags": tags,
+            "status": "open"
+        })
+
+    return alerts
+
+
+def get_alert_summary(alerts):
+    severity_counts = {}
+
+    for alert in alerts:
+        severity = alert.get("severity") or "unknown"
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+    return {
+        "total_alerts": len(alerts),
+        "open_alerts": len(alerts),
+        "severity_counts": severity_counts
+    }
+
 
 def get_security_event_by_id(event_id):
     """
@@ -1058,9 +1147,110 @@ def log_request(ctx, status_code, message):
     }
 
     request_logger.info(json.dumps(log_entry))
+    save_request_log(log_entry)
+
+
+def save_request_log(log_entry):
+    """
+    Stores one request log entry in SQLite.
+    File logging remains the fallback source if this table is unavailable.
+    """
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO request_logs (
+                timestamp,
+                request_id,
+                method,
+                endpoint,
+                client_ip,
+                status_code,
+                latency_ms,
+                message
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            log_entry["timestamp"],
+            log_entry["request_id"],
+            log_entry["method"],
+            log_entry["endpoint"],
+            log_entry["client_ip"],
+            log_entry["status_code"],
+            log_entry["latency_ms"],
+            log_entry["message"]
+        ))
+
+        conn.commit()
+    except sqlite3.Error:
+        return
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_recent_logs_from_db(limit=10):
+    try:
+        limit = int(limit)
+    except ValueError:
+        limit = 10
+
+    limit = max(1, min(limit, 100))
+
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                timestamp,
+                request_id,
+                method,
+                endpoint,
+                client_ip,
+                status_code,
+                latency_ms,
+                message
+            FROM request_logs
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,))
+
+        rows = cursor.fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+    logs = []
+
+    for row in reversed(rows):
+        logs.append({
+            "timestamp": row["timestamp"],
+            "request_id": row["request_id"],
+            "method": row["method"],
+            "endpoint": row["endpoint"],
+            "client_ip": row["client_ip"],
+            "status_code": row["status_code"],
+            "latency_ms": row["latency_ms"],
+            "message": row["message"]
+        })
+
+    return logs
 
 
 def get_recent_logs(limit=10):
+    db_logs = get_recent_logs_from_db(limit=limit)
+
+    if db_logs is not None and (db_logs or not os.path.exists(REQUEST_LOG_FILE)):
+        return db_logs
+
     if not os.path.exists(REQUEST_LOG_FILE):
         return []
 
@@ -1094,7 +1284,80 @@ def get_recent_logs(limit=10):
         }]
 
 
+def empty_request_metrics():
+    return {
+        "total_requests_logged": 0,
+        "status_code_counts": {},
+        "recent_error_count": 0,
+        "average_latency_ms": 0
+    }
+
+
+def get_request_metrics_from_db():
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT status_code, latency_ms
+            FROM request_logs
+        """)
+
+        rows = cursor.fetchall()
+    except sqlite3.Error:
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+    if not rows:
+        return empty_request_metrics()
+
+    status_code_counts = {}
+    error_count = 0
+    total_latency = 0
+    latency_count = 0
+
+    for row in rows:
+        status_code = str(row["status_code"])
+        status_code_counts[status_code] = status_code_counts.get(status_code, 0) + 1
+
+        if status_code.startswith("4") or status_code.startswith("5"):
+            error_count += 1
+
+        latency = row["latency_ms"]
+
+        if isinstance(latency, int) or isinstance(latency, float):
+            total_latency += latency
+            latency_count += 1
+
+    average_latency = 0
+
+    if latency_count > 0:
+        average_latency = round(total_latency / latency_count, 2)
+
+    return {
+        "total_requests_logged": len(rows),
+        "status_code_counts": status_code_counts,
+        "recent_error_count": error_count,
+        "average_latency_ms": average_latency
+    }
+
+
 def get_request_metrics():
+    db_metrics = get_request_metrics_from_db()
+
+    if (
+        db_metrics is not None
+        and (
+            db_metrics["total_requests_logged"] > 0
+            or not os.path.exists(REQUEST_LOG_FILE)
+        )
+    ):
+        return db_metrics
+
     if not os.path.exists(REQUEST_LOG_FILE):
         return {
             "total_requests_logged": 0,
@@ -1282,6 +1545,25 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         self.send_json_response(
             200,
             data=summary,
+            request_id=ctx.request_id
+        )
+
+    def handle_alerts(self, ctx, query_params):
+        limit = query_params.get("limit", ["20"])[0]
+        alerts = get_alerts(limit=limit)
+
+        log_request(ctx, 200, "Alerts requested")
+
+        self.send_json_response(
+            200,
+            data={
+                "alerts": alerts,
+                "count": len(alerts),
+                "summary": get_alert_summary(alerts),
+                "filters": {
+                    "limit": int(limit) if str(limit).isdigit() else 20
+                }
+            },
             request_id=ctx.request_id
         )
         
@@ -1522,6 +1804,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.handle_events_summary(ctx)
             return
 
+        if endpoint == "/api/v1/alerts":
+            self.handle_alerts(ctx, query_params)
+            return
+
         if endpoint == "/api/v1/events":
             self.handle_events(ctx, query_params)
             return
@@ -1632,6 +1918,7 @@ def run_server():
     print("  /api/v1/events")
     print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
+    print("  /api/v1/alerts")
     print("  /api/v1/devices")
     print("  /api/v1/network/scan")
     print("  /api/v1/logs/recent")
