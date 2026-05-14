@@ -26,6 +26,23 @@ async function fetchApi(endpoint) {
     return response.json();
 }
 
+async function postApi(endpoint, payload) {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": API_KEY
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+
+    return response.json();
+}
+
 function formatUptime(seconds) {
     if (seconds === null || seconds === undefined) {
         return "Unknown";
@@ -271,10 +288,28 @@ function renderAlerts(data) {
                         <span>${formatTimestamp(alert.timestamp)}</span>
                         <span>${formatValue(alert.source_ip)}</span>
                     </div>
+                    <div class="alert-actions">
+                        ${String(alert.status || "open").toLowerCase() === "open" ? `
+                            <button type="button" data-alert-id="${alert.id}" data-alert-status="acknowledged">
+                                Acknowledge
+                            </button>
+                        ` : ""}
+                        <button type="button" data-alert-id="${alert.id}" data-alert-status="resolved">
+                            Resolve
+                        </button>
+                    </div>
                 </article>
             `).join("")}
         </div>
     `;
+}
+
+async function updateAlertStatus(alertId, status) {
+    await postApi(`/api/v1/alerts/${encodeURIComponent(alertId)}/status`, {
+        status
+    });
+
+    await loadDashboard();
 }
 
 function renderEvents(data) {
@@ -565,5 +600,24 @@ async function loadDashboard() {
 }
 
 refreshButton.addEventListener("click", loadDashboard);
+
+alertsPanel.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-alert-id][data-alert-status]");
+
+    if (!button) {
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Updating...";
+
+    try {
+        await updateAlertStatus(button.dataset.alertId, button.dataset.alertStatus);
+    } catch (error) {
+        button.disabled = false;
+        button.textContent = "Retry";
+        setApiStatus("status-danger", error.message);
+    }
+});
 
 loadDashboard();
