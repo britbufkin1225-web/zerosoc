@@ -60,6 +60,8 @@ PROTECTED_ENDPOINTS = {
     "/api/v1/metrics"
 }
 
+ALERT_STATUSES = {"open", "acknowledged", "resolved"}
+
 # =========================
 # Logging Config
 # =========================
@@ -189,6 +191,15 @@ def init_database():
             status_code INTEGER NOT NULL,
             latency_ms REAL NOT NULL,
             message TEXT NOT NULL
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS alert_states (
+            alert_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
         )
     """)
 
@@ -381,7 +392,7 @@ def get_events_summary():
     return summary
 
 
-def get_alerts(limit=20):
+def get_alerts(limit=20, status="active"):
     """
     Builds active alerts from high-priority security events.
     Alerts are derived from high/critical severity events and events tagged
@@ -393,25 +404,47 @@ def get_alerts(limit=20):
         limit = 20
 
     limit = max(1, min(limit, 100))
+    status = str(status or "active").strip().lower()
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    status_clause = "AND COALESCE(alert_states.status, 'open') != 'resolved'"
+    params = []
+
+    if status == "all":
+        status_clause = ""
+    elif status in ALERT_STATUSES:
+        status_clause = "AND COALESCE(alert_states.status, 'open') = ?"
+        params.append(status)
+    elif status != "active":
+        status_clause = "AND COALESCE(alert_states.status, 'open') != 'resolved'"
+
+    params.append(limit)
+
+    cursor.execute(f"""
         SELECT
-            id,
-            timestamp,
-            source_ip,
-            event_type,
-            severity,
-            message,
-            tag
+            security_events.id,
+            security_events.timestamp,
+            security_events.source_ip,
+            security_events.event_type,
+            security_events.severity,
+            security_events.message,
+            security_events.tag,
+            COALESCE(alert_states.status, 'open') AS alert_status,
+            alert_states.note AS alert_note,
+            alert_states.updated_at AS alert_updated_at
         FROM security_events
-        WHERE severity IN ('critical', 'high')
-           OR tag LIKE '%needs-review%'
-        ORDER BY timestamp DESC
+        LEFT JOIN alert_states
+            ON alert_states.alert_id = security_events.id
+        WHERE (
+            security_events.severity IN ('critical', 'high')
+            OR security_events.tag LIKE '%needs-review%'
+        )
+        {status_clause}
+        ORDER BY security_events.timestamp DESC
         LIMIT ?
-    """, (limit,))
+    """, params)
 
     rows = cursor.fetchall()
     conn.close()
@@ -429,7 +462,9 @@ def get_alerts(limit=20):
             "severity": row["severity"],
             "message": row["message"],
             "tags": tags,
-            "status": "open"
+            "status": row["alert_status"],
+            "note": row["alert_note"] or "",
+            "status_updated_at": row["alert_updated_at"]
         })
 
     return alerts
@@ -437,16 +472,78 @@ def get_alerts(limit=20):
 
 def get_alert_summary(alerts):
     severity_counts = {}
+    status_counts = {}
 
     for alert in alerts:
         severity = alert.get("severity") or "unknown"
+        status = alert.get("status") or "open"
         severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        status_counts[status] = status_counts.get(status, 0) + 1
 
     return {
         "total_alerts": len(alerts),
-        "open_alerts": len(alerts),
+        "open_alerts": status_counts.get("open", 0),
+        "acknowledged_alerts": status_counts.get("acknowledged", 0),
+        "resolved_alerts": status_counts.get("resolved", 0),
+        "status_counts": status_counts,
         "severity_counts": severity_counts
     }
+
+
+def is_alert_event(event):
+    if event is None:
+        return False
+
+    severity = str(event.get("severity") or "").lower()
+    tags = event.get("tags") or []
+
+    return severity in {"critical", "high"} or "needs-review" in tags
+
+
+def update_alert_status(alert_id, status, note=""):
+    status = str(status or "").strip().lower()
+
+    if status not in ALERT_STATUSES:
+        raise ValueError("Alert status must be one of: open, acknowledged, resolved")
+
+    event = get_security_event_by_id(alert_id)
+
+    if not is_alert_event(event):
+        return None
+
+    note = str(note or "").strip()
+    updated_at = datetime.now().isoformat()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO alert_states (
+            alert_id,
+            status,
+            note,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(alert_id) DO UPDATE SET
+            status = excluded.status,
+            note = excluded.note,
+            updated_at = excluded.updated_at
+    """, (
+        alert_id,
+        status,
+        note,
+        updated_at
+    ))
+
+    conn.commit()
+    conn.close()
+
+    event["status"] = status
+    event["note"] = note
+    event["status_updated_at"] = updated_at
+
+    return event
 
 
 def get_security_event_by_id(event_id):
@@ -1504,6 +1601,9 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         if endpoint.startswith("/api/v1/events/"):
             return True
 
+        if endpoint.startswith("/api/v1/alerts/"):
+            return True
+
         return False
         
     def handle_events(self, ctx, query_params):
@@ -1550,7 +1650,8 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
     def handle_alerts(self, ctx, query_params):
         limit = query_params.get("limit", ["20"])[0]
-        alerts = get_alerts(limit=limit)
+        status = query_params.get("status", ["active"])[0]
+        alerts = get_alerts(limit=limit, status=status)
 
         log_request(ctx, 200, "Alerts requested")
 
@@ -1561,8 +1662,66 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "count": len(alerts),
                 "summary": get_alert_summary(alerts),
                 "filters": {
-                    "limit": int(limit) if str(limit).isdigit() else 20
+                    "limit": int(limit) if str(limit).isdigit() else 20,
+                    "status": status
                 }
+            },
+            request_id=ctx.request_id
+        )
+
+    def handle_alert_status_update(self, ctx, endpoint, data):
+        alert_id = endpoint.replace("/api/v1/alerts/", "").replace("/status", "").strip("/")
+
+        if not alert_id:
+            log_request(ctx, 400, "Missing alert ID")
+
+            self.send_json_response(
+                400,
+                error={
+                    "message": "Missing alert ID"
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        try:
+            alert = update_alert_status(
+                alert_id=alert_id,
+                status=data.get("status"),
+                note=data.get("note", "")
+            )
+        except ValueError as error:
+            log_request(ctx, 400, str(error))
+
+            self.send_json_response(
+                400,
+                error={
+                    "message": str(error)
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        if alert is None:
+            log_request(ctx, 404, "Alert not found")
+
+            self.send_json_response(
+                404,
+                error={
+                    "message": "Alert not found",
+                    "alert_id": alert_id
+                },
+                request_id=ctx.request_id
+            )
+            return
+
+        log_request(ctx, 200, "Alert status updated")
+
+        self.send_json_response(
+            200,
+            data={
+                "status": "updated",
+                "alert": alert
             },
             request_id=ctx.request_id
         )
@@ -1894,6 +2053,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             handle_create_event(self, ctx, data)
             return
 
+        if endpoint.startswith("/api/v1/alerts/") and endpoint.endswith("/status"):
+            self.handle_alert_status_update(ctx, endpoint, data)
+            return
+
         handle_unknown_post_route(self, ctx) 
         
 # =========================
@@ -1919,6 +2082,7 @@ def run_server():
     print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
     print("  /api/v1/alerts")
+    print("  /api/v1/alerts/{id}/status")
     print("  /api/v1/devices")
     print("  /api/v1/network/scan")
     print("  /api/v1/logs/recent")

@@ -163,6 +163,65 @@ class ZeroSOCHelperTests(unittest.TestCase):
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 
+    def test_alert_status_can_be_acknowledged_and_resolved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                high_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="unittest",
+                    message="Repeated failed login from test"
+                )
+
+                acknowledged = run.update_alert_status(
+                    high_event["id"],
+                    "acknowledged",
+                    note="Investigating"
+                )
+                active_alerts = run.get_alerts()
+                active_summary = run.get_alert_summary(active_alerts)
+
+                self.assertEqual(acknowledged["status"], "acknowledged")
+                self.assertEqual(active_alerts[0]["status"], "acknowledged")
+                self.assertEqual(active_alerts[0]["note"], "Investigating")
+                self.assertEqual(active_summary["open_alerts"], 0)
+                self.assertEqual(active_summary["acknowledged_alerts"], 1)
+
+                resolved = run.update_alert_status(high_event["id"], "resolved")
+                active_alerts = run.get_alerts()
+                all_alerts = run.get_alerts(status="all")
+                all_summary = run.get_alert_summary(all_alerts)
+
+                self.assertEqual(resolved["status"], "resolved")
+                self.assertEqual(active_alerts, [])
+                self.assertEqual(all_alerts[0]["status"], "resolved")
+                self.assertEqual(all_summary["resolved_alerts"], 1)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_status_rejects_non_alert_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                low_event = run.create_security_event(
+                    event_type="manual-test",
+                    severity="low",
+                    source="unittest",
+                    message="Low severity event"
+                )
+
+                self.assertIsNone(
+                    run.update_alert_status(low_event["id"], "acknowledged")
+                )
+
+                with self.assertRaises(ValueError):
+                    run.update_alert_status(low_event["id"], "invalid")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
     def test_request_log_helpers_parse_recent_logs_and_metrics(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             original_log_file = run.REQUEST_LOG_FILE

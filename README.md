@@ -205,6 +205,7 @@ sudo systemctl restart zerosoc
 | GET | `/api/v1/events/{id}` | Retrieve one security event by ID | Yes | Working |
 | GET | `/api/v1/events/summary` | Security event summary counts | Yes | Working |
 | GET | `/api/v1/alerts` | List active high-priority alerts | Yes | Working |
+| POST | `/api/v1/alerts/{id}/status` | Acknowledge, reopen, or resolve an alert | Yes | Working |
 | POST | `/api/v1/events` | Create a new security event | Yes | Working |
 | GET | `/api/v1/devices` | List recently seen network devices | Yes | Working |
 | GET | `/api/v1/network/scan` | Scan local network devices | Yes | Working |
@@ -275,6 +276,26 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/events/su
 curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts
 ```
 
+Use `?status=all` to include resolved alerts, or filter by `open`, `acknowledged`, or `resolved`.
+
+### Update alert status
+
+Replace `<alert_id>` with an alert ID returned from `/api/v1/alerts`.
+
+```powershell
+$body = @{
+  status = "acknowledged"
+  note = "Investigating"
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/<alert_id>/status" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+Valid alert statuses are `open`, `acknowledged`, and `resolved`.
+
 ### View one event by ID
 
 Replace `<event_id>` with a real event ID returned from `/api/v1/events`.
@@ -333,6 +354,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - Security event creation and retrieval
 - Security event auto-tagging
 - High-priority alert endpoint
+- Alert acknowledgement and resolution workflow
 - Event summary metrics
 - Local system health/status endpoints
 - Local network scanning
@@ -350,7 +372,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ## Planned Next Steps
 
-- Add alert acknowledgement workflow
+- Add notification delivery for unresolved alerts
 
 ## Project Timeline
 
@@ -459,6 +481,7 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Add alert helper tests
 - [x] Add dashboard alert summary card
 - [x] Add dashboard active alerts panel
+- [x] Add persisted alert acknowledgement and resolution workflow
 
 ## Development Notes
 
@@ -466,4 +489,4 @@ ZeroSOC is currently in active development. The backend foundation is functional
 
 Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is alert acknowledgement workflow.
+The next major focus is notification delivery for unresolved alerts.
