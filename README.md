@@ -57,6 +57,9 @@ Protected API endpoints use the development API key unless `ZEROSOC_API_KEY` is 
 X-API-Key: dev-zero-soc-key
 ```
 
+Webhook alert delivery is optional. Set `ZEROSOC_ALERT_WEBHOOK_URL` to a URL that accepts JSON `POST` requests before using the webhook notification channel.
+Alert notification delivery has a 15-minute duplicate cooldown by default. Override it with `ZEROSOC_ALERT_NOTIFICATION_COOLDOWN_SECONDS`.
+
 ## Raspberry Pi Deployment
 
 These steps target Raspberry Pi OS Lite on a Raspberry Pi Zero 2 W or similar small home-lab device.
@@ -159,6 +162,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/pi/zerosoc
 Environment=ZEROSOC_API_KEY=replace-with-a-long-local-key
+Environment=ZEROSOC_ALERT_WEBHOOK_URL=https://example.com/zerosoc-alerts
+Environment=ZEROSOC_ALERT_NOTIFICATION_COOLDOWN_SECONDS=900
 ExecStart=/usr/bin/python3 /home/pi/zerosoc/run.py
 Restart=on-failure
 RestartSec=5
@@ -205,8 +210,23 @@ sudo systemctl restart zerosoc
 | GET | `/api/v1/events/{id}` | Retrieve one security event by ID | Yes | Working |
 | GET | `/api/v1/events/summary` | Security event summary counts | Yes | Working |
 | GET | `/api/v1/alerts` | List active high-priority alerts | Yes | Working |
+| GET | `/api/v1/alerts/export` | Export filtered alerts as CSV | Yes | Working |
+| GET | `/api/v1/alerts/incidents/activity` | List incident activity timeline | Yes | Working |
+| GET | `/api/v1/alerts/incidents/activity/export` | Export incident activity audit CSV | Yes | Working |
+| GET | `/api/v1/alerts/incidents/export` | Export grouped alert incidents as CSV | Yes | Working |
+| GET | `/api/v1/alerts/reports` | List saved alert investigation reports | Yes | Working |
+| GET | `/api/v1/alerts/reports/activity` | List investigation report activity timeline | Yes | Working |
+| GET | `/api/v1/alerts/reports/activity/export` | Export report activity audit CSV | Yes | Working |
+| GET | `/api/v1/alerts/reports/{id}/export` | Export investigation report handoff bundle | Yes | Working |
+| GET | `/api/v1/alerts/reports/{id}/print` | Printable alert investigation report | Yes | Working |
 | GET | `/api/v1/alerts/notifications` | List delivered alert notifications | Yes | Working |
 | POST | `/api/v1/alerts/notifications` | Deliver notifications for unresolved alerts | Yes | Working |
+| POST | `/api/v1/alerts/incidents/{id}/state` | Update incident status, owner, and note | Yes | Working |
+| POST | `/api/v1/alerts/{id}/report` | Save an alert investigation report | Yes | Working |
+| POST | `/api/v1/alerts/reports/{id}/archive` | Archive an investigation report | Yes | Working |
+| POST | `/api/v1/alerts/reports/{id}/details` | Update investigation report title and summary | Yes | Working |
+| POST | `/api/v1/alerts/reports/{id}/restore` | Restore an archived investigation report | Yes | Working |
+| POST | `/api/v1/alerts/reports/{id}/status` | Update investigation report status | Yes | Working |
 | POST | `/api/v1/alerts/{id}/status` | Acknowledge, reopen, or resolve an alert | Yes | Working |
 | POST | `/api/v1/events` | Create a new security event | Yes | Working |
 | GET | `/api/v1/devices` | List recently seen network devices | Yes | Working |
@@ -279,6 +299,156 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts
 ```
 
 Use `?status=all` to include resolved alerts, or filter by `open`, `acknowledged`, or `resolved`.
+Use `?severity=critical`, `high`, `medium`, or `low` to narrow the alert list by severity.
+Use `?q=<text>` to search alerts by source IP, message, or event type.
+
+### Export alerts as CSV
+
+This exports the current alert investigation set. It supports the same `status`, `severity`, and `q` filters as `/api/v1/alerts`.
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" "http://localhost:8000/api/v1/alerts/export?severity=high" -o zerosoc-alerts.csv
+```
+
+### Export grouped incidents as CSV
+
+This exports the current incident groups. It supports the same `status`, `severity`, and `q` filters as `/api/v1/alerts`.
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" "http://localhost:8000/api/v1/alerts/incidents/export?severity=high" -o zerosoc-alert-incidents.csv
+```
+
+### View incident activity
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/incidents/activity
+```
+
+Use `?incident_id=<incident_id>` to show activity for one incident.
+
+### Export incident activity
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" "http://localhost:8000/api/v1/alerts/incidents/activity/export?incident_id=<incident_id>" -o zerosoc-incident-activity.csv
+```
+
+### Update incident status, owner, and note
+
+```powershell
+$body = @{
+  status = "investigating"
+  owner = "Brit"
+  note = "Watching source IP and login spray pattern."
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/incidents/<incident_id>/state" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+### Save an alert investigation report
+
+```powershell
+$body = @{
+  title = "Failed login investigation"
+  summary = "Reviewed source IP, authentication logs, and lockout status."
+  status = "draft"
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/<alert_id>/report" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+### View alert investigation reports
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/reports
+```
+
+Use `?status=draft` or `?status=final` to filter the report list.
+Use `?q=<text>` to search report titles and summaries.
+Use `?include_archived=only` to view archived reports.
+
+### View report activity
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/reports/activity
+```
+
+Use `?report_id=<report_id>` to show activity for one report.
+Use `?action=archived`, `restored`, `details_updated`, `status_updated`, `created`, or `exported` to filter by activity type.
+
+### Export report activity
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" "http://localhost:8000/api/v1/alerts/reports/activity/export?action=archived" -o zerosoc-report-activity.csv
+```
+
+### Export an investigation report bundle
+
+This downloads a JSON handoff bundle with the report and original alert context.
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/reports/<report_id>/export -o zerosoc-report.json
+```
+
+### Archive an investigation report
+
+Archived reports stay in the database, but are hidden from the default report list.
+
+```powershell
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/reports/<report_id>/archive" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary "{}"
+```
+
+### Restore an archived investigation report
+
+```powershell
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/reports/<report_id>/restore" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary "{}"
+```
+
+### Open a printable investigation report
+
+```powershell
+curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/alerts/reports/<report_id>/print
+```
+
+### Update an investigation report
+
+```powershell
+$body = @{
+  title = "Failed login investigation"
+  summary = "Confirmed password spray pattern and blocked source IP."
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/reports/<report_id>/details" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
+
+### Update an investigation report status
+
+Valid report statuses are `draft` and `final`.
+
+```powershell
+$body = @{
+  status = "final"
+} | ConvertTo-Json
+
+curl.exe -X POST "http://localhost:8000/api/v1/alerts/reports/<report_id>/status" `
+  -H "X-API-Key: dev-zero-soc-key" `
+  -H "Content-Type: application/json" `
+  --data-binary $body
+```
 
 ### Update alert status
 
@@ -300,7 +470,7 @@ Valid alert statuses are `open`, `acknowledged`, and `resolved`.
 
 ### Deliver unresolved alert notifications
 
-This records local notification delivery attempts for active unresolved alerts.
+This records notification delivery attempts for active unresolved alerts.
 
 ```powershell
 $body = @{
@@ -312,6 +482,10 @@ curl.exe -X POST "http://localhost:8000/api/v1/alerts/notifications" `
   -H "Content-Type: application/json" `
   --data-binary $body
 ```
+
+Use `channel = "webhook"` to send each unresolved alert to `ZEROSOC_ALERT_WEBHOOK_URL`. If the webhook URL is not configured, the delivery attempt is saved with `skipped` status.
+
+Duplicate delivered notifications for the same alert and channel are suppressed for 900 seconds by default. To override per request, include `cooldown_seconds` in the JSON body.
 
 ### View alert notification history
 
@@ -380,6 +554,38 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - Alert acknowledgement and resolution workflow
 - Dashboard resolved alerts history view
 - Local notification delivery log for unresolved alerts
+- Webhook notification channel for unresolved alerts
+- Notification cooldowns and duplicate suppression
+- Alert severity filters and dashboard quick filters
+- Alert search by source IP, message, or event type
+- Notification delivery metrics in the dashboard summary
+- Alert CSV export for investigations
+- Saved alert investigation reports
+- Dashboard investigation report history panel
+- Printable investigation report view
+- Dashboard report print action
+- Report status updates and finalization
+- Dashboard report finalization controls
+- Editable investigation report summaries
+- Report filtering by draft/final status
+- Report search by title or summary
+- Report export bundle for incident handoff
+- Report archive workflow
+- Dashboard report count summary by status
+- Archived report recovery view
+- Report timeline activity entries
+- Report activity filtering by action
+- Report activity export for audits
+- Incident grouping for related alerts
+- Alert priority scoring
+- Incident detail drilldown
+- Incident CSV export
+- Incident notes
+- Incident owner assignment
+- Incident status workflow
+- Incident activity timeline
+- Incident activity export
+- Incident filters by owner/status
 - Dashboard alert notification controls and history view
 - Event summary metrics
 - Local system health/status endpoints
@@ -398,7 +604,8 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 
 ## Planned Next Steps
 
-- Add external notification channels such as webhook or email delivery
+- Add incident due dates
+- Add stale incident warnings
 
 ## Project Timeline
 
@@ -511,6 +718,38 @@ curl.exe -H "X-API-Key: dev-zero-soc-key" http://localhost:8000/api/v1/metrics
 - [x] Add dashboard resolved alerts history panel
 - [x] Add local notification delivery for unresolved alerts
 - [x] Add dashboard alert notification history panel
+- [x] Add webhook notification channel for unresolved alerts
+- [x] Add notification cooldowns and duplicate suppression
+- [x] Add alert severity filters and dashboard quick filters
+- [x] Add alert search by source IP, message, or event type
+- [x] Add notification delivery metrics to the dashboard summary
+- [x] Add alert export for CSV investigations
+- [x] Add saved alert investigation reports
+- [x] Add dashboard investigation report history panel
+- [x] Add printable investigation report view
+- [x] Add dashboard report print action
+- [x] Add report status updates and finalization
+- [x] Add dashboard report finalization controls
+- [x] Add editable investigation report summaries
+- [x] Add report filtering by draft/final status
+- [x] Add report search by title or summary
+- [x] Add report export bundle for incident handoff
+- [x] Add report archive workflow
+- [x] Add dashboard report count summary by status
+- [x] Add archived report recovery view
+- [x] Add report timeline activity entries
+- [x] Add report activity filtering by action
+- [x] Add report activity export for audits
+- [x] Add incident grouping for related alerts
+- [x] Add alert priority scoring
+- [x] Add incident detail drilldown
+- [x] Add incident CSV export
+- [x] Add incident notes
+- [x] Add incident owner assignment
+- [x] Add incident status workflow
+- [x] Add incident activity timeline
+- [x] Add incident activity export
+- [x] Add incident filters by owner/status
 
 ## Development Notes
 
@@ -518,4 +757,4 @@ ZeroSOC is currently in active development. The backend foundation is functional
 
 Phase 4 dashboard work now includes a polished visual layer. The dashboard loads in the browser, connects to the backend API, displays system health, metrics, event summaries, recent security events, and network devices, and includes a visible API status indicator.
 
-The next major focus is external notification channels such as webhook or email delivery.
+The next major focus is making incident work queues time-aware.

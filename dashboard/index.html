@@ -41,6 +41,18 @@
             <span id="alerts-summary-label" class="status-label">Checking</span>
         </div>
 
+        <div id="notifications-summary-card" class="summary-card status-neutral">
+            <h3>Notifications</h3>
+            <p id="summary-notifications">Loading...</p>
+            <span id="notifications-summary-label" class="status-label">Checking</span>
+        </div>
+
+        <div id="reports-summary-card" class="summary-card status-neutral">
+            <h3>Reports</h3>
+            <p id="summary-reports">Loading...</p>
+            <span id="reports-summary-label" class="status-label">Checking</span>
+        </div>
+
         <div id="devices-summary-card" class="summary-card status-neutral">
             <h3>Devices</h3>
             <p id="summary-devices">Loading...</p>
@@ -77,19 +89,119 @@
         </section>
 
         <section class="card wide">
-            <h2>Active Alerts</h2>
+            <div class="section-heading">
+                <h2>Active Alerts</h2>
+                <div id="alertSeverityFilters" class="segmented-control" aria-label="Alert severity filter">
+                    <button type="button" data-alert-severity="all" class="active">All</button>
+                    <button type="button" data-alert-severity="critical">Critical</button>
+                    <button type="button" data-alert-severity="high">High</button>
+                    <button type="button" data-alert-severity="medium">Medium</button>
+                </div>
+            </div>
+            <div class="alert-tools">
+                <label for="alertSearchInput">Search alerts</label>
+                <input
+                    id="alertSearchInput"
+                    type="search"
+                    placeholder="Source IP, message, or type"
+                    autocomplete="off"
+                />
+                <button id="exportAlertsButton" type="button">Export CSV</button>
+                <button id="exportIncidentsButton" type="button">Export Incidents</button>
+            </div>
             <div id="alertsPanel" class="alerts-panel">
                 Loading alerts...
+            </div>
+            <div class="incident-block">
+                <div class="section-heading compact-heading">
+                    <h3>Incident Groups</h3>
+                    <div class="section-actions incident-filter-tools">
+                        <label for="incidentOwnerFilter">Owner</label>
+                        <input
+                            id="incidentOwnerFilter"
+                            type="search"
+                            placeholder="Owner"
+                            autocomplete="off"
+                        />
+                        <label for="incidentStatusFilter">Status</label>
+                        <select id="incidentStatusFilter">
+                            <option value="all">All</option>
+                            <option value="open">Open</option>
+                            <option value="investigating">Investigating</option>
+                            <option value="contained">Contained</option>
+                            <option value="resolved">Resolved</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="incidentGroupsPanel" class="incidents-panel">
+                    Loading incident groups...
+                </div>
+                <div class="incident-activity-block">
+                    <div class="section-heading compact-heading">
+                        <h3>Incident Activity</h3>
+                        <button id="exportIncidentActivityButton" type="button">Export Activity</button>
+                    </div>
+                    <div id="incidentActivityPanel" class="activity-panel">
+                        Loading incident activity...
+                    </div>
+                </div>
             </div>
         </section>
 
         <section class="card wide">
             <div class="section-heading">
                 <h2>Alert Notifications</h2>
-                <button id="notifyAlertsButton" type="button">Notify Active Alerts</button>
+                <div class="section-actions">
+                    <button id="notifyAlertsButton" type="button">Log Active Alerts</button>
+                    <button id="notifyWebhookButton" type="button">Send Webhook</button>
+                </div>
             </div>
             <div id="alertNotificationsPanel" class="notifications-panel">
                 Loading alert notifications...
+            </div>
+        </section>
+
+        <section class="card wide">
+            <div class="section-heading">
+                <h2>Investigation Reports</h2>
+                <div id="reportStatusFilters" class="segmented-control" aria-label="Report status filter">
+                    <button type="button" data-report-filter-status="all" class="active">All</button>
+                    <button type="button" data-report-filter-status="draft">Draft</button>
+                    <button type="button" data-report-filter-status="final">Final</button>
+                    <button type="button" data-report-filter-status="archived">Archived</button>
+                </div>
+            </div>
+            <div class="alert-tools">
+                <label for="reportSearchInput">Search reports</label>
+                <input
+                    id="reportSearchInput"
+                    type="search"
+                    placeholder="Title or summary"
+                    autocomplete="off"
+                />
+            </div>
+            <div id="alertReportsPanel" class="reports-panel">
+                Loading investigation reports...
+            </div>
+            <div class="report-activity-block">
+                <div class="section-heading compact-heading">
+                    <h3>Report Activity</h3>
+                    <div class="section-actions">
+                        <div id="reportActivityFilters" class="segmented-control" aria-label="Report activity filter">
+                            <button type="button" data-report-activity-action="all" class="active">All</button>
+                            <button type="button" data-report-activity-action="created">Created</button>
+                            <button type="button" data-report-activity-action="details_updated">Edited</button>
+                            <button type="button" data-report-activity-action="status_updated">Status</button>
+                            <button type="button" data-report-activity-action="exported">Exported</button>
+                            <button type="button" data-report-activity-action="archived">Archived</button>
+                            <button type="button" data-report-activity-action="restored">Restored</button>
+                        </div>
+                        <button id="exportReportActivityButton" type="button">Export Activity</button>
+                    </div>
+                </div>
+                <div id="reportActivityPanel" class="activity-panel">
+                    Loading report activity...
+                </div>
             </div>
         </section>
 

@@ -1,4 +1,6 @@
 import json
+import csv
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -163,6 +165,686 @@ class ZeroSOCHelperTests(unittest.TestCase):
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 
+    def test_alerts_can_be_filtered_by_severity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                high_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="unittest",
+                    message="Repeated failed login from test"
+                )
+                medium_event = run.create_security_event(
+                    event_type="malware-signal",
+                    severity="medium",
+                    source="unittest",
+                    message="Malware payload detected during test"
+                )
+
+                high_alerts = run.get_alerts(severity="high")
+                medium_alerts = run.get_alerts(severity="medium")
+                all_alerts = run.get_alerts()
+
+                self.assertEqual([alert["id"] for alert in high_alerts], [high_event["id"]])
+                self.assertEqual([alert["id"] for alert in medium_alerts], [medium_event["id"]])
+                self.assertEqual(len(all_alerts), 2)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alerts_can_be_searched_by_source_message_or_type(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                login_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                malware_event = run.create_security_event(
+                    event_type="malware-signal",
+                    severity="medium",
+                    source="10.0.0.9",
+                    message="Suspicious payload detected"
+                )
+
+                source_alerts = run.get_alerts(search="10.0.0.5")
+                message_alerts = run.get_alerts(search="payload")
+                type_alerts = run.get_alerts(search="auth")
+
+                self.assertEqual([alert["id"] for alert in source_alerts], [login_event["id"]])
+                self.assertEqual([alert["id"] for alert in message_alerts], [malware_event["id"]])
+                self.assertEqual([alert["id"] for alert in type_alerts], [login_event["id"]])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alerts_can_be_exported_as_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login, needs investigation"
+                )
+                run.update_alert_status(
+                    created["id"],
+                    "acknowledged",
+                    note="Investigating failed login"
+                )
+
+                csv_body = run.alerts_to_csv(run.get_alerts(status="all"))
+                rows = list(csv.DictReader(io.StringIO(csv_body)))
+
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["id"], created["id"])
+                self.assertEqual(rows[0]["source_ip"], "10.0.0.5")
+                self.assertEqual(rows[0]["status"], "acknowledged")
+                self.assertEqual(rows[0]["note"], "Investigating failed login")
+                self.assertIn("Repeated failed login", rows[0]["message"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alerts_include_priority_scores(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="critical",
+                    source="10.0.0.5",
+                    message="Repeated password spray from test"
+                )
+
+                alerts = run.get_alerts()
+                summary = run.get_alert_summary(alerts)
+
+                self.assertEqual(alerts[0]["id"], created["id"])
+                self.assertGreaterEqual(alerts[0]["priority_score"], 85)
+                self.assertEqual(alerts[0]["priority_label"], "urgent")
+                self.assertEqual(alerts[0]["incident_key"], "10.0.0.5:auth-failure")
+                self.assertEqual(summary["highest_priority_score"], alerts[0]["priority_score"])
+                self.assertEqual(summary["priority_counts"]["urgent"], 1)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alerts_are_grouped_into_incidents(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                first = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                second = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Another failed login from test"
+                )
+                run.create_security_event(
+                    event_type="malware-signal",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Malware signature detected"
+                )
+
+                alerts = run.get_alerts()
+                incidents = run.group_alerts_into_incidents(alerts)
+                auth_incident = next(
+                    incident for incident in incidents
+                    if incident["id"] == "10.0.0.5:auth-failure"
+                )
+
+                self.assertEqual(len(incidents), 2)
+                self.assertEqual(auth_incident["alert_count"], 2)
+                self.assertEqual(auth_incident["open_alerts"], 2)
+                self.assertIn(first["id"], auth_incident["alert_ids"])
+                self.assertIn(second["id"], auth_incident["alert_ids"])
+                self.assertGreater(auth_incident["highest_priority_score"], 0)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_incidents_can_be_exported_as_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Another failed login from test"
+                )
+
+                incidents = run.group_alerts_into_incidents(run.get_alerts())
+                rows = list(csv.DictReader(io.StringIO(run.incidents_to_csv(incidents))))
+
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["id"], "10.0.0.5:auth-failure")
+                self.assertEqual(rows[0]["alert_count"], "2")
+                self.assertEqual(rows[0]["source_ip"], "10.0.0.5")
+                self.assertIn("auth-failure", rows[0]["event_type"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_incident_state_owner_and_note_are_saved_and_grouped(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+
+                state = run.update_incident_state(
+                    "10.0.0.5:auth-failure",
+                    owner="Brit",
+                    note="Watching source IP and login spray pattern."
+                )
+                incidents = run.group_alerts_into_incidents(run.get_alerts())
+                incident = incidents[0]
+                rows = list(csv.DictReader(io.StringIO(run.incidents_to_csv(incidents))))
+
+                self.assertEqual(state["owner"], "Brit")
+                self.assertEqual(incident["owner"], "Brit")
+                self.assertEqual(incident["note"], "Watching source IP and login spray pattern.")
+                self.assertEqual(rows[0]["owner"], "Brit")
+                self.assertIn("Watching source IP", rows[0]["note"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_incident_status_and_activity_are_tracked(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+
+                state = run.update_incident_state(
+                    "10.0.0.5:auth-failure",
+                    owner="Brit",
+                    note="Watching source IP.",
+                    status="investigating"
+                )
+                incidents = run.group_alerts_into_incidents(run.get_alerts())
+                activity = run.get_incident_activity(
+                    incident_id="10.0.0.5:auth-failure"
+                )
+                actions = [item["action"] for item in activity]
+
+                self.assertEqual(state["status"], "investigating")
+                self.assertEqual(incidents[0]["status"], "investigating")
+                self.assertIn("status_updated", actions)
+                self.assertIn("owner_updated", actions)
+                self.assertIn("note_updated", actions)
+                self.assertEqual(activity[0]["incident_id"], "10.0.0.5:auth-failure")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_incident_activity_can_be_exported_as_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.update_incident_state(
+                    "10.0.0.5:auth-failure",
+                    owner="Brit",
+                    note="Watching source IP.",
+                    status="investigating"
+                )
+
+                activity = run.get_incident_activity(
+                    incident_id="10.0.0.5:auth-failure"
+                )
+                rows = list(csv.DictReader(io.StringIO(run.incident_activity_to_csv(activity))))
+
+                self.assertGreaterEqual(len(rows), 1)
+                self.assertEqual(rows[0]["incident_id"], "10.0.0.5:auth-failure")
+                self.assertIn(rows[0]["action"], {"status_updated", "owner_updated", "note_updated"})
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_incident_status_rejects_unknown_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                with self.assertRaises(ValueError):
+                    run.update_incident_state(
+                        "10.0.0.5:auth-failure",
+                        status="waiting"
+                    )
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_investigation_reports_can_be_saved_and_listed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Reviewing source IP and account lockout logs.",
+                    status="draft"
+                )
+                reports = run.get_alert_reports(alert_id=created["id"])
+                summary = run.get_alert_report_summary()
+
+                self.assertIsNotNone(report)
+                self.assertEqual(report["alert_id"], created["id"])
+                self.assertEqual(report["title"], "Failed login investigation")
+                self.assertEqual(reports[0]["summary"], "Reviewing source IP and account lockout logs.")
+                self.assertEqual(summary["total_reports"], 1)
+                self.assertEqual(summary["draft_reports"], 1)
+                self.assertEqual(summary["latest_report"]["alert_id"], created["id"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_print_html_includes_report_and_alert_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Reviewed source IP and account lockout logs."
+                )
+
+                html_body = run.render_alert_report_html(report)
+
+                self.assertIn("Failed login investigation", html_body)
+                self.assertIn("Reviewed source IP", html_body)
+                self.assertIn("10.0.0.5", html_body)
+                self.assertIn("Repeated failed login", html_body)
+                self.assertIn("Print report", html_body)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_status_can_be_finalized_and_reopened(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Reviewed source IP and account lockout logs."
+                )
+
+                finalized = run.update_alert_report_status(report["id"], "final")
+                final_summary = run.get_alert_report_summary()
+                reopened = run.update_alert_report_status(report["id"], "draft")
+                draft_summary = run.get_alert_report_summary()
+
+                self.assertEqual(finalized["status"], "final")
+                self.assertEqual(final_summary["final_reports"], 1)
+                self.assertEqual(final_summary["draft_reports"], 0)
+                self.assertEqual(reopened["status"], "draft")
+                self.assertEqual(draft_summary["final_reports"], 0)
+                self.assertEqual(draft_summary["draft_reports"], 1)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_status_rejects_unknown_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Reviewed source IP and account lockout logs."
+                )
+
+                with self.assertRaises(ValueError):
+                    run.update_alert_report_status(report["id"], "archived")
+
+                self.assertEqual(run.get_alert_report_by_id(report["id"])["status"], "draft")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_reports_can_be_filtered_by_status(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                first_alert = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                second_alert = run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Malware signature detected"
+                )
+                draft_report = run.save_alert_report(
+                    alert_id=first_alert["id"],
+                    title="Draft failed login report",
+                    summary="Still reviewing."
+                )
+                final_report = run.save_alert_report(
+                    alert_id=second_alert["id"],
+                    title="Final malware report",
+                    summary="Containment complete.",
+                    status="final"
+                )
+
+                draft_reports = run.get_alert_reports(status="draft")
+                final_reports = run.get_alert_reports(status="final")
+                all_reports = run.get_alert_reports(status="unknown")
+
+                self.assertEqual([report["id"] for report in draft_reports], [draft_report["id"]])
+                self.assertEqual([report["id"] for report in final_reports], [final_report["id"]])
+                self.assertEqual(len(all_reports), 2)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_details_can_be_updated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Initial notes."
+                )
+
+                updated = run.update_alert_report_details(
+                    report_id=report["id"],
+                    title="Failed login investigation updated",
+                    summary="Confirmed password spray pattern."
+                )
+                saved = run.get_alert_report_by_id(report["id"])
+
+                self.assertEqual(updated["title"], "Failed login investigation updated")
+                self.assertEqual(updated["summary"], "Confirmed password spray pattern.")
+                self.assertEqual(saved["title"], "Failed login investigation updated")
+                self.assertEqual(saved["summary"], "Confirmed password spray pattern.")
+                self.assertEqual(saved["status"], "draft")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_reports_can_be_searched_by_title_or_summary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                first_alert = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                second_alert = run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Malware signature detected"
+                )
+                spray_report = run.save_alert_report(
+                    alert_id=first_alert["id"],
+                    title="Password spray investigation",
+                    summary="Reviewing authentication logs."
+                )
+                containment_report = run.save_alert_report(
+                    alert_id=second_alert["id"],
+                    title="Malware containment",
+                    summary="Endpoint isolated and forensic image captured."
+                )
+
+                title_matches = run.get_alert_reports(search="spray")
+                summary_matches = run.get_alert_reports(search="forensic")
+
+                self.assertEqual([report["id"] for report in title_matches], [spray_report["id"]])
+                self.assertEqual([report["id"] for report in summary_matches], [containment_report["id"]])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_export_bundle_includes_report_and_alert_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Confirmed password spray pattern."
+                )
+
+                bundle = run.get_alert_report_export_bundle(report["id"])
+
+                self.assertEqual(bundle["type"], "zerosoc-alert-investigation-report")
+                self.assertEqual(bundle["report"]["id"], report["id"])
+                self.assertEqual(bundle["report"]["summary"], "Confirmed password spray pattern.")
+                self.assertEqual(bundle["alert"]["id"], created["id"])
+                self.assertEqual(bundle["alert"]["source_ip"], "10.0.0.5")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_can_be_archived_without_deleting_it(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Confirmed password spray pattern."
+                )
+
+                archived = run.archive_alert_report(report["id"])
+                active_reports = run.get_alert_reports()
+                archived_reports = run.get_alert_reports(include_archived=True)
+                summary = run.get_alert_report_summary()
+
+                self.assertTrue(archived["archived_at"])
+                self.assertEqual(active_reports, [])
+                self.assertEqual(len(archived_reports), 1)
+                self.assertEqual(archived_reports[0]["id"], report["id"])
+                self.assertEqual(summary["total_reports"], 1)
+                self.assertEqual(summary["active_reports"], 0)
+                self.assertEqual(summary["archived_reports"], 1)
+                self.assertEqual(summary["draft_reports"], 0)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_archived_alert_report_can_be_restored(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Confirmed password spray pattern."
+                )
+
+                run.archive_alert_report(report["id"])
+                restored = run.restore_alert_report(report["id"])
+                active_reports = run.get_alert_reports()
+                summary = run.get_alert_report_summary()
+
+                self.assertEqual(restored["archived_at"], "")
+                self.assertEqual(len(active_reports), 1)
+                self.assertEqual(active_reports[0]["id"], report["id"])
+                self.assertEqual(summary["active_reports"], 1)
+                self.assertEqual(summary["archived_reports"], 0)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_report_activity_tracks_report_lifecycle(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Confirmed password spray pattern."
+                )
+
+                run.update_alert_report_status(report["id"], "final")
+                run.update_alert_report_details(
+                    report_id=report["id"],
+                    title="Failed login investigation updated",
+                    summary="Confirmed password spray pattern and lockout."
+                )
+                run.archive_alert_report(report["id"])
+                run.restore_alert_report(report["id"])
+
+                activity = run.get_report_activity(report_id=report["id"])
+                actions = [item["action"] for item in activity]
+
+                self.assertIn("created", actions)
+                self.assertIn("status_updated", actions)
+                self.assertIn("details_updated", actions)
+                self.assertIn("archived", actions)
+                self.assertIn("restored", actions)
+                self.assertEqual(activity[0]["report_id"], report["id"])
+                self.assertEqual(activity[0]["report_title"], "Failed login investigation updated")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_report_activity_can_be_filtered_by_action_and_exported(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                created = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+                report = run.save_alert_report(
+                    alert_id=created["id"],
+                    title="Failed login investigation",
+                    summary="Confirmed password spray pattern."
+                )
+                run.archive_alert_report(report["id"])
+
+                archived_activity = run.get_report_activity(
+                    report_id=report["id"],
+                    action="archived"
+                )
+                csv_body = run.report_activity_to_csv(archived_activity)
+
+                self.assertEqual(len(archived_activity), 1)
+                self.assertEqual(archived_activity[0]["action"], "archived")
+                self.assertIn("report_id", csv_body)
+                self.assertIn("archived", csv_body)
+                self.assertIn("Failed login investigation", csv_body)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_report_rejects_non_alert_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                low_event = run.create_security_event(
+                    event_type="manual-test",
+                    severity="low",
+                    source="unittest",
+                    message="Low severity event"
+                )
+
+                report = run.save_alert_report(
+                    alert_id=low_event["id"],
+                    title="Low event report",
+                    summary="Should not save for a non-alert."
+                )
+
+                self.assertIsNone(report)
+                self.assertEqual(run.get_alert_reports(), [])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
     def test_alert_status_can_be_acknowledged_and_resolved(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
@@ -255,6 +937,7 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 self.assertEqual(notifications[0]["alert_id"], high_event["id"])
                 self.assertEqual(notifications[0]["channel"], "dashboard")
                 self.assertEqual(notifications[0]["status"], "delivered")
+                self.assertEqual(notifications[0]["details"], "Stored in local notification log")
                 self.assertIn("Repeated failed login", notifications[0]["message"])
 
                 run.update_alert_status(high_event["id"], "resolved")
@@ -262,6 +945,108 @@ class ZeroSOCHelperTests(unittest.TestCase):
 
                 self.assertEqual(resolved_result["unresolved_alert_count"], 0)
                 self.assertEqual(resolved_result["delivered_count"], 0)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_webhook_notifications_are_skipped_without_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                high_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="unittest",
+                    message="Repeated failed login from test"
+                )
+
+                result = run.notify_unresolved_alerts(
+                    channel="webhook",
+                    webhook_url=""
+                )
+                notification = result["notifications"][0]
+
+                self.assertEqual(result["channel"], "webhook")
+                self.assertEqual(result["delivered_count"], 0)
+                self.assertEqual(result["failed_count"], 0)
+                self.assertEqual(result["skipped_count"], 1)
+                self.assertEqual(notification["alert_id"], high_event["id"])
+                self.assertEqual(notification["status"], "skipped")
+                self.assertIn("not configured", notification["details"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_notification_cooldown_suppresses_duplicates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                high_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="unittest",
+                    message="Repeated failed login from test"
+                )
+
+                first_result = run.notify_unresolved_alerts(
+                    channel="dashboard",
+                    cooldown_seconds=900
+                )
+                second_result = run.notify_unresolved_alerts(
+                    channel="dashboard",
+                    cooldown_seconds=900
+                )
+                notifications = run.get_alert_notifications()
+
+                self.assertEqual(first_result["delivered_count"], 1)
+                self.assertEqual(first_result["skipped_count"], 0)
+                self.assertEqual(second_result["delivered_count"], 0)
+                self.assertEqual(second_result["skipped_count"], 1)
+                self.assertEqual(second_result["cooldown_seconds"], 900)
+                self.assertEqual(notifications[0]["alert_id"], high_event["id"])
+                self.assertEqual(notifications[0]["status"], "skipped")
+                self.assertIn("Suppressed duplicate", notifications[0]["details"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_notification_summary_counts_delivery_statuses(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.save_alert_notification(
+                    alert_id="alert-1",
+                    channel="dashboard",
+                    status="delivered",
+                    message="Delivered alert",
+                    details="Stored locally",
+                    created_at="2026-05-14T10:00:00"
+                )
+                run.save_alert_notification(
+                    alert_id="alert-2",
+                    channel="webhook",
+                    status="failed",
+                    message="Failed alert",
+                    details="Webhook returned HTTP 500",
+                    created_at="2026-05-14T10:01:00"
+                )
+                run.save_alert_notification(
+                    alert_id="alert-3",
+                    channel="webhook",
+                    status="skipped",
+                    message="Skipped alert",
+                    details="Suppressed duplicate",
+                    created_at="2026-05-14T10:02:00"
+                )
+
+                summary = run.get_alert_notification_summary()
+
+                self.assertEqual(summary["total_notifications"], 3)
+                self.assertEqual(summary["delivered_notifications"], 1)
+                self.assertEqual(summary["failed_notifications"], 1)
+                self.assertEqual(summary["skipped_notifications"], 1)
+                self.assertEqual(summary["channel_counts"]["webhook"], 2)
+                self.assertEqual(summary["latest_notification"]["alert_id"], "alert-3")
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 

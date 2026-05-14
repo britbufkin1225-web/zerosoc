@@ -5,15 +5,39 @@ const systemStatus = document.getElementById("systemStatus");
 const metricsStatus = document.getElementById("metricsStatus");
 const eventSummary = document.getElementById("eventSummary");
 const alertsPanel = document.getElementById("alertsPanel");
+const incidentGroupsPanel = document.getElementById("incidentGroupsPanel");
+const incidentActivityPanel = document.getElementById("incidentActivityPanel");
+const incidentOwnerFilter = document.getElementById("incidentOwnerFilter");
+const incidentStatusFilter = document.getElementById("incidentStatusFilter");
+const exportIncidentActivityButton = document.getElementById("exportIncidentActivityButton");
 const resolvedAlertsPanel = document.getElementById("resolvedAlertsPanel");
 const alertNotificationsPanel = document.getElementById("alertNotificationsPanel");
+const alertReportsPanel = document.getElementById("alertReportsPanel");
+const reportActivityPanel = document.getElementById("reportActivityPanel");
 const eventsTable = document.getElementById("eventsTable");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
 const refreshButton = document.getElementById("refreshButton");
 const notifyAlertsButton = document.getElementById("notifyAlertsButton");
+const notifyWebhookButton = document.getElementById("notifyWebhookButton");
+const alertSeverityFilters = document.getElementById("alertSeverityFilters");
+const alertSearchInput = document.getElementById("alertSearchInput");
+const exportAlertsButton = document.getElementById("exportAlertsButton");
+const exportIncidentsButton = document.getElementById("exportIncidentsButton");
+const reportStatusFilters = document.getElementById("reportStatusFilters");
+const reportSearchInput = document.getElementById("reportSearchInput");
+const reportActivityFilters = document.getElementById("reportActivityFilters");
+const exportReportActivityButton = document.getElementById("exportReportActivityButton");
 const apiStatusIndicator = document.getElementById("apiStatusIndicator");
 const apiStatusText = document.getElementById("apiStatusText");
+let activeAlertSeverity = "all";
+let activeAlertSearch = "";
+let activeIncidentKey = "";
+let activeIncidentOwner = "";
+let activeIncidentStatus = "all";
+let activeReportStatus = "all";
+let activeReportSearch = "";
+let activeReportActivityAction = "all";
 
 async function fetchApi(endpoint) {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -44,6 +68,34 @@ async function postApi(endpoint, payload) {
     }
 
     return response.json();
+}
+
+async function fetchFile(endpoint) {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        headers: {
+            "X-API-Key": API_KEY
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+
+    return response.blob();
+}
+
+async function fetchText(endpoint) {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        headers: {
+            "X-API-Key": API_KEY
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Request failed: ${response.status}`);
+    }
+
+    return response.text();
 }
 
 function formatUptime(seconds) {
@@ -107,6 +159,19 @@ function formatHtmlValue(value) {
 
 function formatAttribute(value) {
     return escapeHtml(value ?? "");
+}
+
+function buildQueryString(params) {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "" && value !== "all") {
+            searchParams.set(key, value);
+        }
+    });
+
+    const queryString = searchParams.toString();
+    return queryString ? `?${queryString}` : "";
 }
 
 function renderStatusRows(data) {
@@ -279,6 +344,13 @@ function severityBadge(severity) {
     return `<span class="badge badge-low">${cleanSeverity}</span>`;
 }
 
+function priorityBadge(alert) {
+    const label = String(alert.priority_label || "low").toLowerCase();
+    const score = Number(alert.priority_score || 0);
+
+    return `<span class="priority-pill priority-${formatAttribute(label)}">${formatHtmlValue(label)} ${score}</span>`;
+}
+
 function renderAlertCard(alert, mode = "active") {
     const status = String(alert.status || "open").toLowerCase();
     const note = String(alert.note || "").trim();
@@ -288,6 +360,7 @@ function renderAlertCard(alert, mode = "active") {
         <article class="alert-item alert-${String(alert.severity || "low").toLowerCase()} alert-status-${status}">
             <div class="alert-header">
                 ${severityBadge(alert.severity)}
+                ${priorityBadge(alert)}
                 <span class="status-pill">${formatHtmlValue(alert.status || "open")}</span>
             </div>
             <div class="alert-body">
@@ -297,6 +370,9 @@ function renderAlertCard(alert, mode = "active") {
             <div class="alert-meta">
                 <span>${formatTimestamp(alert.timestamp)}</span>
                 <span>${formatHtmlValue(alert.source_ip)}</span>
+            </div>
+            <div class="alert-meta">
+                <span>Incident ${formatHtmlValue(alert.incident_key || "unassigned")}</span>
             </div>
             ${alert.status_updated_at ? `
                 <div class="alert-meta">
@@ -323,30 +399,163 @@ function renderAlertCard(alert, mode = "active") {
                     <button type="button" data-alert-id="${alertId}" data-alert-status="resolved" data-alert-note="${formatAttribute(note)}">
                         Resolve
                     </button>
+                    <button type="button" data-alert-report-id="${alertId}">
+                        Save Report
+                    </button>
                 `}
             </div>
         </article>
     `;
 }
 
-function renderAlerts(data) {
-    const alerts = Array.isArray(data) ? data : data.alerts || [];
+function renderIncidentGroups(data) {
+    const allIncidents = Array.isArray(data) ? data : data.incidents || [];
+    const ownerFilter = activeIncidentOwner.toLowerCase();
+    const incidents = allIncidents.filter(incident => {
+        const owner = String(incident.owner || "").toLowerCase();
+        const status = String(incident.status || "open").toLowerCase();
+        const ownerMatches = !ownerFilter || owner.includes(ownerFilter);
+        const statusMatches = activeIncidentStatus === "all" || status === activeIncidentStatus;
+        return ownerMatches && statusMatches;
+    });
 
-    if (alerts.length === 0) {
-        alertsPanel.innerHTML = `
+    if (incidents.length === 0) {
+        incidentGroupsPanel.innerHTML = `
             <div class="empty-state">
-                <strong>No active alerts</strong>
-                <span>High-priority event signals are clear.</span>
+                <strong>No incident groups</strong>
+                <span>No incidents match the current owner/status filters.</span>
             </div>
         `;
         return;
     }
 
+    incidentGroupsPanel.innerHTML = `
+        ${activeIncidentKey ? `
+            <div class="incident-focus-bar">
+                <span>Focused on ${formatHtmlValue(activeIncidentKey)}</span>
+                <button type="button" data-incident-clear>Show All</button>
+            </div>
+        ` : ""}
+        <div class="incident-list">
+            ${incidents.map(incident => `
+                <article
+                    class="incident-item priority-${formatAttribute(incident.highest_priority_label)} ${activeIncidentKey === incident.id ? "active" : ""}"
+                    data-incident-key="${formatAttribute(incident.id)}"
+                >
+                    <div class="incident-header">
+                        <h4>${formatHtmlValue(incident.event_type)}</h4>
+                        <span class="priority-pill priority-${formatAttribute(incident.highest_priority_label)}">
+                            ${formatHtmlValue(incident.highest_priority_label)} ${formatHtmlValue(incident.highest_priority_score)}
+                        </span>
+                    </div>
+                    <div class="alert-meta">
+                        <span>${formatHtmlValue(incident.source_ip)}</span>
+                        <span>${formatHtmlValue(incident.alert_count)} alerts</span>
+                    </div>
+                    <div class="alert-meta">
+                        <span>${formatHtmlValue(incident.open_alerts)} unresolved</span>
+                        <span>Latest ${formatTimestamp(incident.latest_timestamp)}</span>
+                    </div>
+                    <div class="incident-state">
+                        <span>Status ${formatHtmlValue(incident.status || "open")}</span>
+                        <span>Owner ${formatHtmlValue(incident.owner || "Unassigned")}</span>
+                        <span>${incident.note ? formatHtmlValue(incident.note) : "No incident note"}</span>
+                    </div>
+                    <div class="incident-alert-ids">
+                        ${incident.alert_ids.map(alertId => `<span>${formatHtmlValue(alertId)}</span>`).join("")}
+                    </div>
+                    <div class="alert-actions">
+                        <button
+                            type="button"
+                            data-incident-state-id="${formatAttribute(incident.id)}"
+                            data-incident-owner="${formatAttribute(incident.owner || "")}"
+                            data-incident-note="${formatAttribute(incident.note || "")}"
+                        >
+                            Assign
+                        </button>
+                        <select
+                            data-incident-status-id="${formatAttribute(incident.id)}"
+                            aria-label="Incident status"
+                        >
+                            ${["open", "investigating", "contained", "resolved"].map(status => `
+                                <option value="${status}" ${status === (incident.status || "open") ? "selected" : ""}>
+                                    ${status}
+                                </option>
+                            `).join("")}
+                        </select>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderIncidentActivity(data) {
+    const activity = Array.isArray(data) ? data : data.activity || [];
+
+    if (activity.length === 0) {
+        incidentActivityPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No incident activity</strong>
+                <span>Incident owner, note, and status changes will appear here.</span>
+            </div>
+        `;
+        return;
+    }
+
+    incidentActivityPanel.innerHTML = `
+        <div class="activity-list">
+            ${activity.map(item => `
+                <article class="activity-item">
+                    <div class="activity-header">
+                        <strong>${formatHtmlValue(item.action).replace(/_/g, " ")}</strong>
+                        <span>${formatTimestamp(item.created_at)}</span>
+                    </div>
+                    <p>${formatHtmlValue(item.details || "Incident activity recorded.")}</p>
+                    <div class="alert-meta">
+                        <span>${formatHtmlValue(item.incident_id)}</span>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderAlerts(data) {
+    const allAlerts = Array.isArray(data) ? data : data.alerts || [];
+    const alerts = activeIncidentKey
+        ? allAlerts.filter(alert => alert.incident_key === activeIncidentKey)
+        : allAlerts;
+    const filter = activeAlertSeverity === "all"
+        ? "active"
+        : `${activeAlertSeverity} active`;
+    const searchText = activeAlertSearch
+        ? ` matching "${activeAlertSearch}"`
+        : "";
+
+    if (alerts.length === 0) {
+        alertsPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No active alerts</strong>
+                <span>No ${formatHtmlValue(filter)} alerts${formatHtmlValue(searchText)} are currently visible.</span>
+            </div>
+        `;
+        renderIncidentGroups(data);
+        return;
+    }
+
     alertsPanel.innerHTML = `
+        ${activeIncidentKey ? `
+            <div class="incident-focus-bar">
+                <span>Showing ${formatHtmlValue(activeIncidentKey)}</span>
+                <button type="button" data-incident-clear>Show All</button>
+            </div>
+        ` : ""}
         <div class="alert-list">
             ${alerts.map(alert => renderAlertCard(alert)).join("")}
         </div>
     `;
+    renderIncidentGroups(data);
 }
 
 function renderResolvedAlerts(data) {
@@ -391,9 +600,122 @@ function renderAlertNotifications(data) {
                         <span>${formatTimestamp(notification.created_at)}</span>
                     </div>
                     <p>${formatHtmlValue(notification.message)}</p>
+                    ${notification.details ? `
+                        <p class="notification-details">${formatHtmlValue(notification.details)}</p>
+                    ` : ""}
                     <div class="alert-meta">
                         <span>${formatHtmlValue(notification.channel)}</span>
                         <span>${formatHtmlValue(notification.alert_id)}</span>
+                    </div>
+                </article>
+            `).join("")}
+        </div>
+    `;
+}
+
+function renderAlertReports(data) {
+    const reports = Array.isArray(data) ? data : data.reports || [];
+
+    if (reports.length === 0) {
+        const emptyText = activeReportStatus === "archived"
+            ? "Archived investigation reports will appear here."
+            : activeReportStatus === "all"
+            ? "Saved alert investigation reports will appear here."
+            : `No ${activeReportStatus} investigation reports match this filter.`;
+
+        alertReportsPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No investigation reports</strong>
+                <span>${formatHtmlValue(emptyText)}</span>
+            </div>
+        `;
+        return;
+    }
+
+    alertReportsPanel.innerHTML = `
+        <div class="report-list">
+            ${reports.map(report => {
+                const isArchived = Boolean(report.archived_at);
+                const nextStatus = report.status === "final" ? "draft" : "final";
+                const statusLabel = report.status === "final" ? "Reopen Draft" : "Mark Final";
+
+                return `
+                <article class="report-item">
+                    <div class="report-header">
+                        <h3>${formatHtmlValue(report.title)}</h3>
+                        <span class="status-pill">${formatHtmlValue(isArchived ? "archived" : report.status)}</span>
+                    </div>
+                    <p data-report-summary>${formatHtmlValue(report.summary)}</p>
+                    <div class="alert-meta">
+                        <span>${formatTimestamp(report.created_at)}</span>
+                        <span>${formatHtmlValue(report.alert_id)}</span>
+                    </div>
+                    ${isArchived ? `
+                        <div class="alert-meta">
+                            <span>Archived ${formatTimestamp(report.archived_at)}</span>
+                        </div>
+                    ` : ""}
+                    <div class="alert-actions">
+                        ${isArchived ? `
+                            <button type="button" data-report-restore-id="${formatAttribute(report.id)}">
+                                Restore
+                            </button>
+                        ` : `
+                            <button type="button" data-report-edit-id="${formatAttribute(report.id)}">
+                                Edit
+                            </button>
+                            <button
+                                type="button"
+                                data-report-status-id="${formatAttribute(report.id)}"
+                                data-report-status="${formatAttribute(nextStatus)}"
+                            >
+                                ${statusLabel}
+                            </button>
+                        `}
+                        <button type="button" data-report-print-id="${formatAttribute(report.id)}">
+                            Print
+                        </button>
+                        <button type="button" data-report-export-id="${formatAttribute(report.id)}">
+                            Export
+                        </button>
+                        ${isArchived ? "" : `
+                            <button type="button" data-report-archive-id="${formatAttribute(report.id)}">
+                                Archive
+                            </button>
+                        `}
+                    </div>
+                </article>
+            `;
+            }).join("")}
+        </div>
+    `;
+}
+
+function renderReportActivity(data) {
+    const activity = Array.isArray(data) ? data : data.activity || [];
+
+    if (activity.length === 0) {
+        reportActivityPanel.innerHTML = `
+            <div class="empty-state">
+                <strong>No report activity</strong>
+                <span>Report changes will appear here.</span>
+            </div>
+        `;
+        return;
+    }
+
+    reportActivityPanel.innerHTML = `
+        <div class="activity-list">
+            ${activity.map(item => `
+                <article class="activity-item">
+                    <div class="activity-header">
+                        <strong>${formatHtmlValue(item.action).replace(/_/g, " ")}</strong>
+                        <span>${formatTimestamp(item.created_at)}</span>
+                    </div>
+                    <p>${formatHtmlValue(item.details || "Report activity recorded.")}</p>
+                    <div class="alert-meta">
+                        <span>${formatHtmlValue(item.report_title)}</span>
+                        <span>${formatHtmlValue(item.report_id)}</span>
                     </div>
                 </article>
             `).join("")}
@@ -415,12 +737,167 @@ async function updateAlertStatus(alertId, status, note) {
     await loadDashboard();
 }
 
-async function deliverAlertNotifications() {
+async function deliverAlertNotifications(channel = "dashboard") {
     await postApi("/api/v1/alerts/notifications", {
-        channel: "dashboard"
+        channel,
+        cooldown_seconds: 900
     });
 
     await loadDashboard();
+}
+
+async function exportAlertsCsv() {
+    const endpoint = `/api/v1/alerts/export${buildQueryString({
+        severity: activeAlertSeverity,
+        q: activeAlertSearch
+    })}`;
+    const blob = await fetchFile(endpoint);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-alerts-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function exportIncidentsCsv() {
+    const endpoint = `/api/v1/alerts/incidents/export${buildQueryString({
+        severity: activeAlertSeverity,
+        q: activeAlertSearch
+    })}`;
+    const blob = await fetchFile(endpoint);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-alert-incidents-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function exportIncidentActivity() {
+    const endpoint = `/api/v1/alerts/incidents/activity/export${buildQueryString({
+        incident_id: activeIncidentKey
+    })}`;
+    const blob = await fetchFile(endpoint);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-incident-activity-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function updateIncidentState(incidentId, owner, note) {
+    await postApi(`/api/v1/alerts/incidents/${encodeURIComponent(incidentId)}/state`, {
+        owner,
+        note
+    });
+
+    await loadDashboard();
+}
+
+async function updateIncidentStatus(incidentId, status) {
+    await postApi(`/api/v1/alerts/incidents/${encodeURIComponent(incidentId)}/state`, {
+        status
+    });
+
+    await loadDashboard();
+}
+
+async function exportAlertReport(reportId) {
+    const blob = await fetchFile(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/export`);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-report-${reportId}-${timestamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function exportReportActivity() {
+    const endpoint = `/api/v1/alerts/reports/activity/export${buildQueryString({
+        action: activeReportActivityAction
+    })}`;
+    const blob = await fetchFile(endpoint);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-report-activity-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function saveAlertReport(alertId, title, summary) {
+    await postApi(`/api/v1/alerts/${encodeURIComponent(alertId)}/report`, {
+        title,
+        summary,
+        status: "draft"
+    });
+
+    await loadDashboard();
+}
+
+async function updateAlertReportStatus(reportId, status) {
+    await postApi(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/status`, {
+        status
+    });
+
+    await loadDashboard();
+}
+
+async function updateAlertReportDetails(reportId, title, summary) {
+    await postApi(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/details`, {
+        title,
+        summary
+    });
+
+    await loadDashboard();
+}
+
+async function archiveAlertReport(reportId) {
+    await postApi(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/archive`, {});
+
+    await loadDashboard();
+}
+
+async function restoreAlertReport(reportId) {
+    await postApi(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/restore`, {});
+
+    await loadDashboard();
+}
+
+async function openPrintableReport(reportId) {
+    const html = await fetchText(`/api/v1/alerts/reports/${encodeURIComponent(reportId)}/print`);
+    const blob = new Blob([html], {
+        type: "text/html"
+    });
+    const objectUrl = URL.createObjectURL(blob);
+
+    window.open(objectUrl, "_blank", "noopener");
+
+    setTimeout(() => {
+        URL.revokeObjectURL(objectUrl);
+    }, 60000);
 }
 
 function renderEvents(data) {
@@ -491,9 +968,11 @@ function renderDevices(data) {
     `;
 }
 
-function updateSummaryCards(system, events, alerts, devices, metrics, eventSummaryData) {
+function updateSummaryCards(system, events, alerts, devices, metrics, eventSummaryData, alertNotifications, alertReports) {
     const systemStatusCard = document.getElementById("summary-system-status");
     const alertsCard = document.getElementById("summary-alerts");
+    const notificationsCard = document.getElementById("summary-notifications");
+    const reportsCard = document.getElementById("summary-reports");
     const devicesCard = document.getElementById("summary-devices");
     const eventsCard = document.getElementById("summary-events");
     const apiCard = document.getElementById("summary-api");
@@ -501,6 +980,8 @@ function updateSummaryCards(system, events, alerts, devices, metrics, eventSumma
     const eventList = events.events || events || [];
     const alertList = alerts.alerts || alerts || [];
     const alertSummary = alerts.summary || {};
+    const notificationSummary = alertNotifications.summary || {};
+    const reportSummary = alertReports.summary || {};
     const deviceList = devices.devices || devices || [];
     const severityCounts = getCountMap(eventSummaryData, "by_severity", "severity_counts");
 
@@ -515,6 +996,10 @@ function updateSummaryCards(system, events, alerts, devices, metrics, eventSumma
     }
     eventsCard.textContent = eventSummaryData.total_events ?? eventList.length;
     alertsCard.textContent = alertSummary.open_alerts ?? alertList.length;
+    notificationsCard.textContent = notificationSummary.failed_notifications
+        ? `${notificationSummary.failed_notifications} failed`
+        : `${notificationSummary.delivered_notifications || 0} sent`;
+    reportsCard.textContent = `${reportSummary.active_reports || 0} active`;
     devicesCard.textContent = deviceList.length;
 
     setSummaryCardStatus(
@@ -559,7 +1044,14 @@ function updateSummaryCards(system, events, alerts, devices, metrics, eventSumma
         String(alert.severity || "").toLowerCase() === "high"
     ).length;
 
-    if (criticalAlerts > 0) {
+    if ((alertSummary.highest_priority_score || 0) >= 85) {
+        setSummaryCardStatus(
+            "alerts-summary-card",
+            "alerts-summary-label",
+            "status-danger",
+            `${alertSummary.incident_count || 0} incidents`
+        );
+    } else if (criticalAlerts > 0) {
         setSummaryCardStatus(
             "alerts-summary-card",
             "alerts-summary-label",
@@ -579,6 +1071,66 @@ function updateSummaryCards(system, events, alerts, devices, metrics, eventSumma
             "alerts-summary-label",
             "status-good",
             "Clear"
+        );
+    }
+
+    if ((notificationSummary.failed_notifications || 0) > 0) {
+        setSummaryCardStatus(
+            "notifications-summary-card",
+            "notifications-summary-label",
+            "status-danger",
+            "Failed"
+        );
+    } else if ((notificationSummary.skipped_notifications || 0) > 0) {
+        setSummaryCardStatus(
+            "notifications-summary-card",
+            "notifications-summary-label",
+            "status-warning",
+            "Skipped"
+        );
+    } else if ((notificationSummary.delivered_notifications || 0) > 0) {
+        setSummaryCardStatus(
+            "notifications-summary-card",
+            "notifications-summary-label",
+            "status-good",
+            "Delivered"
+        );
+    } else {
+        setSummaryCardStatus(
+            "notifications-summary-card",
+            "notifications-summary-label",
+            "status-neutral",
+            "None"
+        );
+    }
+
+    if ((reportSummary.archived_reports || 0) > 0) {
+        setSummaryCardStatus(
+            "reports-summary-card",
+            "reports-summary-label",
+            "status-warning",
+            `${reportSummary.archived_reports} archived`
+        );
+    } else if ((reportSummary.final_reports || 0) > 0) {
+        setSummaryCardStatus(
+            "reports-summary-card",
+            "reports-summary-label",
+            "status-good",
+            `${reportSummary.final_reports} final`
+        );
+    } else if ((reportSummary.draft_reports || 0) > 0) {
+        setSummaryCardStatus(
+            "reports-summary-card",
+            "reports-summary-label",
+            "status-warning",
+            `${reportSummary.draft_reports} draft`
+        );
+    } else {
+        setSummaryCardStatus(
+            "reports-summary-card",
+            "reports-summary-label",
+            "status-neutral",
+            "None"
         );
     }
 
@@ -631,19 +1183,49 @@ async function loadDashboard() {
     metricsStatus.innerHTML = "Loading metrics...";
     eventSummary.innerHTML = "Loading event summary...";
     alertsPanel.innerHTML = "Loading alerts...";
+    incidentGroupsPanel.innerHTML = "Loading incident groups...";
+    incidentActivityPanel.innerHTML = "Loading incident activity...";
     alertNotificationsPanel.innerHTML = "Loading alert notifications...";
+    alertReportsPanel.innerHTML = "Loading investigation reports...";
+    reportActivityPanel.innerHTML = "Loading report activity...";
     resolvedAlertsPanel.innerHTML = "Loading resolved alerts...";
     eventsTable.innerHTML = "Loading events...";
     devicesTable.innerHTML = "Loading devices...";
     setApiStatus("status-neutral", "API checking");
 
     try {
-        const [systemData, metricsData, eventsSummaryData, alertsData, alertNotificationsData, resolvedAlertsData, eventsData, devicesData] = await Promise.all([
+        const activeAlertsEndpoint = `/api/v1/alerts${buildQueryString({
+            severity: activeAlertSeverity,
+            q: activeAlertSearch
+        })}`;
+        const reportQuery = activeReportStatus === "archived"
+            ? {
+                include_archived: "only",
+                q: activeReportSearch
+            }
+            : {
+                status: activeReportStatus,
+                q: activeReportSearch
+            };
+        const alertReportsEndpoint = `/api/v1/alerts/reports${buildQueryString(reportQuery)}`;
+
+        const reportActivityEndpoint = `/api/v1/alerts/reports/activity${buildQueryString({
+            action: activeReportActivityAction
+        })}`;
+
+        const incidentActivityEndpoint = `/api/v1/alerts/incidents/activity${buildQueryString({
+            incident_id: activeIncidentKey
+        })}`;
+
+        const [systemData, metricsData, eventsSummaryData, alertsData, incidentActivityData, alertNotificationsData, alertReportsData, reportActivityData, resolvedAlertsData, eventsData, devicesData] = await Promise.all([
             fetchApi("/api/v1/system"),
             fetchApi("/api/v1/metrics"),
             fetchApi("/api/v1/events/summary"),
-            fetchApi("/api/v1/alerts"),
+            fetchApi(activeAlertsEndpoint),
+            fetchApi(incidentActivityEndpoint),
             fetchApi("/api/v1/alerts/notifications"),
+            fetchApi(alertReportsEndpoint),
+            fetchApi(reportActivityEndpoint),
             fetchApi("/api/v1/alerts?status=resolved"),
             fetchApi("/api/v1/events"),
             fetchApi("/api/v1/devices")
@@ -653,7 +1235,10 @@ async function loadDashboard() {
         const metrics = metricsData.data || metricsData;
         const eventSummaryData = eventsSummaryData.data || eventsSummaryData;
         const alerts = alertsData.data || alertsData;
+        const incidentActivity = incidentActivityData.data || incidentActivityData;
         const alertNotifications = alertNotificationsData.data || alertNotificationsData;
+        const alertReports = alertReportsData.data || alertReportsData;
+        const reportActivity = reportActivityData.data || reportActivityData;
         const resolvedAlerts = resolvedAlertsData.data || resolvedAlertsData;
         const events = eventsData.data || eventsData;
         const devices = devicesData.data || devicesData;
@@ -662,12 +1247,24 @@ async function loadDashboard() {
         renderMetrics(metrics);
         renderEventSummary(eventSummaryData);
         renderAlerts(alerts);
+        renderIncidentActivity(incidentActivity);
         renderAlertNotifications(alertNotifications);
+        renderAlertReports(alertReports);
+        renderReportActivity(reportActivity);
         renderResolvedAlerts(resolvedAlerts);
         renderEvents(events);
         renderDevices(devices);
 
-        updateSummaryCards(system, events, alerts, devices, metrics, eventSummaryData);
+        updateSummaryCards(
+            system,
+            events,
+            alerts,
+            devices,
+            metrics,
+            eventSummaryData,
+            alertNotifications,
+            alertReports
+        );
 
         lastUpdated.textContent = `Last updated: ${formatTimestamp(new Date().toISOString())}`;
         setApiStatus("status-good", "API online");
@@ -677,6 +1274,10 @@ async function loadDashboard() {
         eventSummary.innerHTML = `<p class="error">${error.message}</p>`;
         alertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         alertNotificationsPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        incidentGroupsPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        incidentActivityPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        alertReportsPanel.innerHTML = `<p class="error">${error.message}</p>`;
+        reportActivityPanel.innerHTML = `<p class="error">${error.message}</p>`;
         resolvedAlertsPanel.innerHTML = `<p class="error">${error.message}</p>`;
         eventsTable.innerHTML = `<p class="error">${error.message}</p>`;
         devicesTable.innerHTML = `<p class="error">${error.message}</p>`;
@@ -705,6 +1306,20 @@ async function loadDashboard() {
         );
 
         setSummaryCardStatus(
+            "notifications-summary-card",
+            "notifications-summary-label",
+            "status-neutral",
+            "Unknown"
+        );
+
+        setSummaryCardStatus(
+            "reports-summary-card",
+            "reports-summary-label",
+            "status-neutral",
+            "Unknown"
+        );
+
+        setSummaryCardStatus(
             "devices-summary-card",
             "devices-summary-label",
             "status-neutral",
@@ -721,21 +1336,442 @@ async function loadDashboard() {
 }
 
 refreshButton.addEventListener("click", loadDashboard);
-notifyAlertsButton.addEventListener("click", async () => {
-    notifyAlertsButton.disabled = true;
-    notifyAlertsButton.textContent = "Notifying...";
+
+alertSeverityFilters.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-alert-severity]");
+
+    if (!button) {
+        return;
+    }
+
+    activeAlertSeverity = button.dataset.alertSeverity || "all";
+
+    alertSeverityFilters
+        .querySelectorAll("[data-alert-severity]")
+        .forEach(filterButton => {
+            filterButton.classList.toggle(
+                "active",
+                filterButton.dataset.alertSeverity === activeAlertSeverity
+            );
+        });
+
+    await loadDashboard();
+});
+
+alertSearchInput.addEventListener("input", async () => {
+    activeAlertSearch = alertSearchInput.value.trim();
+    await loadDashboard();
+});
+
+exportAlertsButton.addEventListener("click", async () => {
+    exportAlertsButton.disabled = true;
+    exportAlertsButton.textContent = "Exporting...";
 
     try {
-        await deliverAlertNotifications();
+        await exportAlertsCsv();
+        setApiStatus("status-good", "CSV exported");
     } catch (error) {
         setApiStatus("status-danger", error.message);
     } finally {
-        notifyAlertsButton.disabled = false;
-        notifyAlertsButton.textContent = "Notify Active Alerts";
+        exportAlertsButton.disabled = false;
+        exportAlertsButton.textContent = "Export CSV";
     }
 });
 
+exportIncidentsButton.addEventListener("click", async () => {
+    exportIncidentsButton.disabled = true;
+    exportIncidentsButton.textContent = "Exporting...";
+
+    try {
+        await exportIncidentsCsv();
+        setApiStatus("status-good", "Incidents exported");
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        exportIncidentsButton.disabled = false;
+        exportIncidentsButton.textContent = "Export Incidents";
+    }
+});
+
+incidentOwnerFilter.addEventListener("input", async () => {
+    activeIncidentOwner = incidentOwnerFilter.value.trim();
+    await loadDashboard();
+});
+
+incidentStatusFilter.addEventListener("change", async () => {
+    activeIncidentStatus = incidentStatusFilter.value;
+    await loadDashboard();
+});
+
+exportIncidentActivityButton.addEventListener("click", async () => {
+    exportIncidentActivityButton.disabled = true;
+    exportIncidentActivityButton.textContent = "Exporting...";
+
+    try {
+        await exportIncidentActivity();
+        setApiStatus("status-good", "Incident activity exported");
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        exportIncidentActivityButton.disabled = false;
+        exportIncidentActivityButton.textContent = "Export Activity";
+    }
+});
+
+incidentGroupsPanel.addEventListener("click", (event) => {
+    const stateButton = event.target.closest("[data-incident-state-id]");
+
+    if (stateButton) {
+        event.stopPropagation();
+
+        const owner = window.prompt(
+            "Incident owner",
+            stateButton.dataset.incidentOwner || ""
+        );
+
+        if (owner === null) {
+            return;
+        }
+
+        const note = window.prompt(
+            "Incident note",
+            stateButton.dataset.incidentNote || ""
+        );
+
+        if (note === null) {
+            return;
+        }
+
+        stateButton.disabled = true;
+        stateButton.textContent = "Saving...";
+
+        updateIncidentState(stateButton.dataset.incidentStateId, owner, note)
+            .then(() => setApiStatus("status-good", "Incident updated"))
+            .catch(error => setApiStatus("status-danger", error.message))
+            .finally(() => {
+                stateButton.disabled = false;
+                stateButton.textContent = "Assign";
+            });
+
+        return;
+    }
+
+    if (event.target.closest("[data-incident-clear]")) {
+        activeIncidentKey = "";
+        loadDashboard();
+        return;
+    }
+
+    const incidentItem = event.target.closest("[data-incident-key]");
+
+    if (!incidentItem) {
+        return;
+    }
+
+    activeIncidentKey = incidentItem.dataset.incidentKey;
+    loadDashboard();
+});
+
+incidentGroupsPanel.addEventListener("change", (event) => {
+    const statusSelect = event.target.closest("[data-incident-status-id]");
+
+    if (!statusSelect) {
+        return;
+    }
+
+    statusSelect.disabled = true;
+
+    updateIncidentStatus(statusSelect.dataset.incidentStatusId, statusSelect.value)
+        .then(() => setApiStatus("status-good", "Incident status updated"))
+        .catch(error => setApiStatus("status-danger", error.message))
+        .finally(() => {
+            statusSelect.disabled = false;
+        });
+});
+
+alertsPanel.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-incident-clear]")) {
+        return;
+    }
+
+    activeIncidentKey = "";
+    loadDashboard();
+});
+
+reportStatusFilters.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-report-filter-status]");
+
+    if (!button) {
+        return;
+    }
+
+    activeReportStatus = button.dataset.reportFilterStatus;
+
+    reportStatusFilters
+        .querySelectorAll("button")
+        .forEach(filterButton => {
+            filterButton.classList.toggle(
+                "active",
+                filterButton.dataset.reportFilterStatus === activeReportStatus
+            );
+        });
+
+    await loadDashboard();
+});
+
+reportSearchInput.addEventListener("input", async () => {
+    activeReportSearch = reportSearchInput.value.trim();
+    await loadDashboard();
+});
+
+reportActivityFilters.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-report-activity-action]");
+
+    if (!button) {
+        return;
+    }
+
+    activeReportActivityAction = button.dataset.reportActivityAction;
+
+    reportActivityFilters
+        .querySelectorAll("button")
+        .forEach(filterButton => {
+            filterButton.classList.toggle(
+                "active",
+                filterButton.dataset.reportActivityAction === activeReportActivityAction
+            );
+        });
+
+    await loadDashboard();
+});
+
+exportReportActivityButton.addEventListener("click", async () => {
+    exportReportActivityButton.disabled = true;
+    exportReportActivityButton.textContent = "Exporting...";
+
+    try {
+        await exportReportActivity();
+        setApiStatus("status-good", "Report activity exported");
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        exportReportActivityButton.disabled = false;
+        exportReportActivityButton.textContent = "Export Activity";
+    }
+});
+
+alertReportsPanel.addEventListener("click", async (event) => {
+    const editButton = event.target.closest("[data-report-edit-id]");
+
+    if (editButton) {
+        const reportItem = editButton.closest(".report-item");
+        const currentTitle = reportItem?.querySelector("h3")?.textContent.trim() || "";
+        const currentSummary = reportItem?.querySelector("[data-report-summary]")?.textContent.trim() || "";
+        const title = window.prompt("Investigation report title", currentTitle);
+
+        if (title === null) {
+            return;
+        }
+
+        const summary = window.prompt("Investigation summary", currentSummary);
+
+        if (summary === null) {
+            return;
+        }
+
+        editButton.disabled = true;
+        editButton.textContent = "Saving...";
+
+        try {
+            await updateAlertReportDetails(editButton.dataset.reportEditId, title, summary);
+            setApiStatus("status-good", "Report updated");
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            editButton.disabled = false;
+            editButton.textContent = "Edit";
+        }
+
+        return;
+    }
+
+    const exportButton = event.target.closest("[data-report-export-id]");
+
+    if (exportButton) {
+        exportButton.disabled = true;
+        exportButton.textContent = "Exporting...";
+
+        try {
+            await exportAlertReport(exportButton.dataset.reportExportId);
+            setApiStatus("status-good", "Report exported");
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            exportButton.disabled = false;
+            exportButton.textContent = "Export";
+        }
+
+        return;
+    }
+
+    const archiveButton = event.target.closest("[data-report-archive-id]");
+
+    if (archiveButton) {
+        const confirmed = window.confirm("Archive this investigation report?");
+
+        if (!confirmed) {
+            return;
+        }
+
+        archiveButton.disabled = true;
+        archiveButton.textContent = "Archiving...";
+
+        try {
+            await archiveAlertReport(archiveButton.dataset.reportArchiveId);
+            setApiStatus("status-good", "Report archived");
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            archiveButton.disabled = false;
+            archiveButton.textContent = "Archive";
+        }
+
+        return;
+    }
+
+    const restoreButton = event.target.closest("[data-report-restore-id]");
+
+    if (restoreButton) {
+        restoreButton.disabled = true;
+        restoreButton.textContent = "Restoring...";
+
+        try {
+            await restoreAlertReport(restoreButton.dataset.reportRestoreId);
+            setApiStatus("status-good", "Report restored");
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            restoreButton.disabled = false;
+            restoreButton.textContent = "Restore";
+        }
+
+        return;
+    }
+
+    const statusButton = event.target.closest("[data-report-status-id]");
+
+    if (statusButton) {
+        const nextStatus = statusButton.dataset.reportStatus;
+        const readyText = nextStatus === "final" ? "Mark Final" : "Reopen Draft";
+
+        statusButton.disabled = true;
+        statusButton.textContent = nextStatus === "final" ? "Finalizing..." : "Reopening...";
+
+        try {
+            await updateAlertReportStatus(statusButton.dataset.reportStatusId, nextStatus);
+            setApiStatus(
+                "status-good",
+                nextStatus === "final" ? "Report finalized" : "Report reopened"
+            );
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            statusButton.disabled = false;
+            statusButton.textContent = readyText;
+        }
+
+        return;
+    }
+
+    const button = event.target.closest("[data-report-print-id]");
+
+    if (!button) {
+        return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Opening...";
+
+    try {
+        await openPrintableReport(button.dataset.reportPrintId);
+        setApiStatus("status-good", "Report opened");
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = "Print";
+    }
+});
+
+async function handleNotificationButtonClick(button, channel, pendingText, readyText) {
+    button.disabled = true;
+    button.textContent = pendingText;
+
+    try {
+        await deliverAlertNotifications(channel);
+    } catch (error) {
+        setApiStatus("status-danger", error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = readyText;
+    }
+}
+
+notifyAlertsButton.addEventListener("click", async () => {
+    await handleNotificationButtonClick(
+        notifyAlertsButton,
+        "dashboard",
+        "Logging...",
+        "Log Active Alerts"
+    );
+});
+
+notifyWebhookButton.addEventListener("click", async () => {
+    await handleNotificationButtonClick(
+        notifyWebhookButton,
+        "webhook",
+        "Sending...",
+        "Send Webhook"
+    );
+});
+
 async function handleAlertActionClick(event) {
+    const reportButton = event.target.closest("[data-alert-report-id]");
+
+    if (reportButton) {
+        const title = window.prompt(
+            "Investigation report title",
+            "Alert investigation"
+        );
+
+        if (title === null) {
+            return;
+        }
+
+        const summary = window.prompt(
+            "Investigation summary",
+            "Document findings, evidence, and next steps."
+        );
+
+        if (summary === null) {
+            return;
+        }
+
+        reportButton.disabled = true;
+        reportButton.textContent = "Saving...";
+
+        try {
+            await saveAlertReport(reportButton.dataset.alertReportId, title, summary);
+            setApiStatus("status-good", "Report saved");
+        } catch (error) {
+            reportButton.disabled = false;
+            reportButton.textContent = "Retry report";
+            setApiStatus("status-danger", error.message);
+        }
+
+        return;
+    }
+
     const button = event.target.closest("[data-alert-id][data-alert-status]");
 
     if (!button) {
