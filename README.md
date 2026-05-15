@@ -35,6 +35,7 @@ ZeroSOC currently includes:
 - Investigation report tracking
 - CSV export support for alerts, incidents, security events, network devices, and investigation activity
 - Web dashboard using HTML, CSS, and JavaScript
+- Brighter daylight dashboard theme with accessible focus states and responsive filter toolbars
 - Dashboard summary cards
 - System status panel
 - Metrics panel
@@ -55,7 +56,7 @@ ZeroSOC currently includes:
 
 ## Dashboard Preview
 
-ZeroSOC includes a browser-based dashboard that displays backend API data in a visual SOC-style interface.
+ZeroSOC includes a browser-based dashboard that displays backend API data in a bright, professional SOC-style interface with accessible navigation, clean cards, readable tables, and responsive filter toolbars.
 
 ![ZeroSOC Security Event Analytics](screenshots/security-event-analytics.png)
 
