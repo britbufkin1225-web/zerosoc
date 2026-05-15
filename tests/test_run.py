@@ -3,6 +3,7 @@ import csv
 import io
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import run
@@ -1139,6 +1140,235 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 self.assertEqual(metrics["status_code_counts"]["401"], 1)
                 self.assertEqual(metrics["recent_error_count"], 1)
                 self.assertEqual(metrics["average_latency_ms"], 10.0)
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_security_events_can_be_filtered_by_search_type_and_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from workstation"
+                )
+                run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Ransomware signature detected"
+                )
+
+                search_results = run.get_security_events(search="workstation")
+                type_results = run.get_security_events(event_type="malware")
+                source_results = run.get_security_events(source="10.0.0.5")
+
+                self.assertEqual(len(search_results), 1)
+                self.assertEqual(search_results[0]["event_type"], "auth-failure")
+                self.assertEqual(len(type_results), 1)
+                self.assertEqual(type_results[0]["source_ip"], "10.0.0.9")
+                self.assertEqual(len(source_results), 1)
+                self.assertEqual(source_results[0]["message"], "Repeated failed login from workstation")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_security_events_can_be_exported_as_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Repeated failed login from test"
+                )
+
+                rows = list(csv.DictReader(io.StringIO(run.events_to_csv(run.get_security_events()))))
+
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["source_ip"], "10.0.0.5")
+                self.assertEqual(rows[0]["event_type"], "auth-failure")
+                self.assertIn("high-priority", rows[0]["tags"])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_network_devices_can_be_filtered_and_exported_as_csv(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.process_network_devices([
+                    {
+                        "ip_address": "192.168.1.42",
+                        "hostname": "test-laptop",
+                        "status": "online",
+                        "mac_address": "aa:bb:cc:dd:ee:ff"
+                    },
+                    {
+                        "ip_address": "192.168.1.43",
+                        "hostname": "lab-printer",
+                        "status": "offline",
+                        "mac_address": "aa:bb:cc:dd:ee:00"
+                    }
+                ])
+
+                filtered = run.get_recent_network_devices(status="online", search="laptop")
+                rows = list(csv.DictReader(io.StringIO(run.network_devices_to_csv(filtered))))
+
+                self.assertEqual(len(filtered), 1)
+                self.assertEqual(filtered[0]["hostname"], "test-laptop")
+                self.assertEqual(rows[0]["ip_address"], "192.168.1.42")
+                self.assertEqual(rows[0]["status"], "online")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_security_events_can_be_filtered_by_recent_time_window(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                old_event = run.create_security_event(
+                    event_type="auth-failure",
+                    severity="medium",
+                    source="10.0.0.5",
+                    message="Older failed login"
+                )
+                recent_event = run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Recent malware alert"
+                )
+
+                conn = run.get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE security_events SET timestamp = ? WHERE id = ?",
+                    ((datetime.now() - timedelta(hours=3)).isoformat(), old_event["id"])
+                )
+                conn.commit()
+                conn.close()
+
+                recent_results = run.get_security_events(since_hours=1)
+
+                self.assertEqual([event["id"] for event in recent_results], [recent_event["id"]])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_network_device_summary_counts_stale_devices(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                run.process_network_devices([
+                    {
+                        "ip_address": "192.168.1.42",
+                        "hostname": "old-laptop",
+                        "status": "online",
+                        "mac_address": "aa:bb:cc:dd:ee:ff"
+                    },
+                    {
+                        "ip_address": "192.168.1.43",
+                        "hostname": "fresh-printer",
+                        "status": "offline",
+                        "mac_address": "aa:bb:cc:dd:ee:00"
+                    }
+                ])
+
+                conn = run.get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE network_devices SET last_seen = ? WHERE ip_address = ?",
+                    ((datetime.now() - timedelta(hours=48)).isoformat(), "192.168.1.42")
+                )
+                conn.commit()
+                conn.close()
+
+                devices = run.get_recent_network_devices()
+                summary = run.get_network_device_summary(devices)
+                rows = list(csv.DictReader(io.StringIO(run.network_devices_to_csv(devices))))
+
+                self.assertEqual(summary["total_devices"], 2)
+                self.assertEqual(summary["online_devices"], 1)
+                self.assertEqual(summary["offline_devices"], 1)
+                self.assertEqual(summary["stale_devices"], 1)
+                self.assertIn("is_stale", rows[0])
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alerts_include_sla_fields_and_can_filter_by_sla_and_priority(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                old_alert = run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Critical malware alert from test"
+                )
+                run.create_security_event(
+                    event_type="auth-failure",
+                    severity="high",
+                    source="10.0.0.5",
+                    message="Recent failed login from test"
+                )
+
+                conn = run.get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE security_events SET timestamp = ? WHERE id = ?",
+                    ((datetime.now() - timedelta(hours=2)).isoformat(), old_alert["id"])
+                )
+                conn.commit()
+                conn.close()
+
+                overdue_alerts = run.get_alerts(sla_status="overdue")
+                urgent_alerts = run.get_alerts(priority="urgent")
+                rows = list(csv.DictReader(io.StringIO(run.alerts_to_csv(overdue_alerts))))
+
+                self.assertEqual([alert["id"] for alert in overdue_alerts], [old_alert["id"]])
+                self.assertEqual(overdue_alerts[0]["sla_status"], "overdue")
+                self.assertTrue(overdue_alerts[0]["is_overdue"])
+                self.assertIn(old_alert["id"], [alert["id"] for alert in urgent_alerts])
+                self.assertEqual(rows[0]["sla_status"], "overdue")
+                self.assertEqual(rows[0]["is_overdue"], "True")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_alert_summary_and_incidents_include_sla_counts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                old_alert = run.create_security_event(
+                    event_type="malware",
+                    severity="critical",
+                    source="10.0.0.9",
+                    message="Critical malware alert from test"
+                )
+
+                conn = run.get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE security_events SET timestamp = ? WHERE id = ?",
+                    ((datetime.now() - timedelta(hours=2)).isoformat(), old_alert["id"])
+                )
+                conn.commit()
+                conn.close()
+
+                alerts = run.get_alerts()
+                summary = run.get_alert_summary(alerts)
+                incidents = run.group_alerts_into_incidents(alerts)
+                rows = list(csv.DictReader(io.StringIO(run.incidents_to_csv(incidents))))
+
+                self.assertEqual(summary["overdue_alerts"], 1)
+                self.assertEqual(summary["sla_counts"]["overdue"], 1)
+                self.assertEqual(incidents[0]["overdue_alerts"], 1)
+                self.assertEqual(rows[0]["overdue_alerts"], "1")
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
 
