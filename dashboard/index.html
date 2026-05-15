@@ -7,10 +7,12 @@
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+    <a class="skip-link" href="#dashboard-main">Skip to dashboard content</a>
     <header class="dashboard-header">
-        <div>
+        <div class="hero-copy">
+            <span class="eyebrow">Local SOC overview</span>
             <h1>ZeroSOC Dashboard</h1>
-            <p>Lightweight local security operations monitor</p>
+            <p>Lightweight local security operations monitor with alerts, events, reports, and device visibility in one clean workspace.</p>
         </div>
 
         <div class="header-actions">
@@ -18,11 +20,11 @@
                 <span class="api-status-dot"></span>
                 <span id="apiStatusText">API checking</span>
             </div>
-            <button id="refreshButton">Refresh</button>
+            <button id="refreshButton" type="button">Refresh data</button>
         </div>
     </header>
 
-    <section class="summary-grid">
+    <section class="summary-grid" aria-label="Dashboard summary">
         <div id="system-summary-card" class="summary-card status-neutral">
             <h3>System</h3>
             <p id="summary-system-status">Loading...</p>
@@ -66,7 +68,7 @@
         </div>
     </section>
 
-    <main class="dashboard-grid">
+    <main id="dashboard-main" class="dashboard-grid">
         <section class="card">
             <h2>System Status</h2>
             <div id="systemStatus" class="data-block">
@@ -111,11 +113,23 @@
         <section class="card wide">
             <div class="section-heading">
                 <h2>Active Alerts</h2>
-                <div id="alertSeverityFilters" class="segmented-control" aria-label="Alert severity filter">
-                    <button type="button" data-alert-severity="all" class="active">All</button>
-                    <button type="button" data-alert-severity="critical">Critical</button>
-                    <button type="button" data-alert-severity="high">High</button>
-                    <button type="button" data-alert-severity="medium">Medium</button>
+                <div class="section-actions stacked-actions">
+                    <div id="alertSeverityFilters" class="segmented-control" aria-label="Alert severity filter">
+                        <button type="button" data-alert-severity="all" class="active">All</button>
+                        <button type="button" data-alert-severity="critical">Critical</button>
+                        <button type="button" data-alert-severity="high">High</button>
+                        <button type="button" data-alert-severity="medium">Medium</button>
+                    </div>
+                    <div id="alertPriorityFilters" class="segmented-control" aria-label="Alert priority filter">
+                        <button type="button" data-alert-priority="all" class="active">Any Priority</button>
+                        <button type="button" data-alert-priority="urgent">Urgent</button>
+                        <button type="button" data-alert-priority="high">High</button>
+                    </div>
+                    <div id="alertSlaFilters" class="segmented-control" aria-label="Alert SLA filter">
+                        <button type="button" data-alert-sla="all" class="active">Any SLA</button>
+                        <button type="button" data-alert-sla="overdue">Overdue</button>
+                        <button type="button" data-alert-sla="due-soon">Due Soon</button>
+                    </div>
                 </div>
             </div>
             <div class="alert-tools">
@@ -233,36 +247,71 @@
         </section>
 
         <section class="card wide">
-    <div class="section-heading">
-        <h2>Security Events</h2>
-    </div>
+            <div class="section-heading">
+                <h2>Security Events</h2>
+            </div>
 
-    <div class="alert-tools">
-        <label for="eventSearchInput">Search events</label>
-        <input
-            id="eventSearchInput"
-            type="search"
-            placeholder="Source IP, type, severity, tag, or message"
-            autocomplete="off"
-        />
+            <div class="alert-tools">
+                <label for="eventSearchInput">Search events</label>
+                <input
+                    id="eventSearchInput"
+                    type="search"
+                    placeholder="Source IP, type, severity, tag, or message"
+                    autocomplete="off"
+                />
 
-        <label for="severityFilter">Severity</label>
-        <select id="severityFilter">
-            <option value="all">All</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-        </select>
-    </div>
+                <label for="severityFilter">Severity</label>
+                <select id="severityFilter">
+                    <option value="all">All</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
 
-    <div id="eventsTable" class="table-wrap">
-        Loading events...
-    </div>
-</section>
+                <label for="eventTimeRangeFilter">Time Range</label>
+                <select id="eventTimeRangeFilter">
+                    <option value="all">All Time</option>
+                    <option value="1">Last Hour</option>
+                    <option value="24">Last 24 Hours</option>
+                    <option value="168">Last 7 Days</option>
+                </select>
+
+                <button id="exportEventsButton" type="button">Export Events</button>
+            </div>
+
+            <div id="eventsTable" class="table-wrap">
+                Loading events...
+            </div>
+        </section>
 
         <section class="card wide">
-            <h2>Network Devices</h2>
+            <div class="section-heading">
+                <h2>Network Devices</h2>
+                <div class="section-actions">
+                    <button id="scanNetworkButton" type="button">Run Scan</button>
+                    <button id="exportDevicesButton" type="button">Export Devices</button>
+                </div>
+            </div>
+            <div class="alert-tools">
+                <label for="deviceSearchInput">Search devices</label>
+                <input
+                    id="deviceSearchInput"
+                    type="search"
+                    placeholder="IP, hostname, MAC, or status"
+                    autocomplete="off"
+                />
+
+                <label for="deviceStatusFilter">Status</label>
+                <select id="deviceStatusFilter">
+                    <option value="all">All</option>
+                    <option value="online">Online</option>
+                    <option value="offline">Offline</option>
+                </select>
+            </div>
+            <div id="deviceSummaryPanel" class="summary-details">
+                Loading device summary...
+            </div>
             <div id="devicesTable" class="table-wrap">
                 Loading devices...
             </div>

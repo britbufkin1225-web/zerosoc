@@ -58,15 +58,25 @@ PROTECTED_ENDPOINTS = {
     "/api/v1/logs",
     "/api/v1/logs/recent",
     "/api/v1/events",
+    "/api/v1/events/export",
     "/api/v1/events/summary",
     "/api/v1/alerts",
     "/api/v1/devices",
+    "/api/v1/devices/export",
     "/api/v1/network/scan",
     "/api/v1/metrics"
 }
 
 ALERT_STATUSES = {"open", "acknowledged", "resolved"}
 ALERT_SEVERITIES = {"critical", "high", "medium", "low"}
+ALERT_PRIORITY_LABELS = {"urgent", "high", "medium", "low"}
+ALERT_SLA_HOURS = {
+    "critical": 1,
+    "high": 4,
+    "medium": 24,
+    "low": 72
+}
+ALERT_SLA_STATUSES = {"on-track", "due-soon", "overdue", "resolved", "unknown"}
 ALERT_WEBHOOK_URL = os.getenv("ZEROSOC_ALERT_WEBHOOK_URL", "").strip()
 ALERT_WEBHOOK_TIMEOUT_SECONDS = 5
 
@@ -381,18 +391,37 @@ def save_security_event(event):
     conn.close()
 
 
-def get_security_events(limit=50, severity=None, tag=None):
+def get_security_events(
+    limit=50,
+    severity=None,
+    tag=None,
+    event_type=None,
+    source=None,
+    search=None,
+    since_hours=None
+):
     """
     Reads security events from the SQLite database.
-    Supports optional filtering by severity and tag.
+    Supports optional filtering by severity, tag, event type, source,
+    and a free-text search across source, type, message, and tags.
     """
 
     try:
         limit = int(limit)
-    except ValueError:
+    except (TypeError, ValueError):
         limit = 50
 
     limit = max(1, min(limit, 100))
+    severity = str(severity or "").strip().lower()
+    tag = str(tag or "").strip()
+    event_type = str(event_type or "").strip()
+    source = str(source or "").strip()
+    search = str(search or "").strip()
+
+    try:
+        since_hours = int(since_hours) if since_hours not in (None, "", "all") else None
+    except (TypeError, ValueError):
+        since_hours = None
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -420,6 +449,30 @@ def get_security_events(limit=50, severity=None, tag=None):
         filters.append("tag LIKE ?")
         params.append(f"%{tag}%")
 
+    if event_type:
+        filters.append("event_type = ?")
+        params.append(event_type)
+
+    if source:
+        filters.append("source_ip = ?")
+        params.append(source)
+
+    if search:
+        filters.append("""
+            (
+                source_ip LIKE ?
+                OR event_type LIKE ?
+                OR message LIKE ?
+                OR tag LIKE ?
+            )
+        """)
+        search_term = f"%{search}%"
+        params.extend([search_term, search_term, search_term, search_term])
+
+    if since_hours is not None and since_hours > 0:
+        filters.append("timestamp >= ?")
+        params.append((datetime.now() - timedelta(hours=since_hours)).isoformat())
+
     if filters:
         query += " WHERE " + " AND ".join(filters)
 
@@ -445,6 +498,53 @@ def get_security_events(limit=50, severity=None, tag=None):
     conn.close()
 
     return events
+
+
+def events_to_csv(events):
+    output = io.StringIO()
+    fieldnames = [
+        "id",
+        "timestamp",
+        "source_ip",
+        "event_type",
+        "severity",
+        "message",
+        "tags"
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for event in events:
+        writer.writerow({
+            "id": event.get("id", ""),
+            "timestamp": event.get("timestamp", ""),
+            "source_ip": event.get("source_ip", ""),
+            "event_type": event.get("event_type", ""),
+            "severity": event.get("severity", ""),
+            "message": event.get("message", ""),
+            "tags": ",".join(event.get("tags", []))
+        })
+
+    return output.getvalue()
+
+def parse_iso_datetime(value):
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_network_device_stale(device, stale_after_hours=24, now=None):
+    last_seen = parse_iso_datetime(device.get("last_seen"))
+
+    if last_seen is None:
+        return False
+
+    reference_time = now or datetime.now(last_seen.tzinfo)
+    return reference_time - last_seen > timedelta(hours=stale_after_hours)
 
 def get_events_summary():
     """
@@ -529,7 +629,55 @@ def get_events_summary():
     return summary
 
 
-def get_alerts(limit=20, status="active", severity=None, search=None):
+def get_alert_sla(alert, now=None):
+    created_at = parse_iso_datetime(alert.get("timestamp"))
+    status = str(alert.get("status") or "open").lower()
+    severity = str(alert.get("severity") or "low").lower()
+    sla_hours = ALERT_SLA_HOURS.get(severity, ALERT_SLA_HOURS["low"])
+
+    if created_at is None:
+        return {
+            "age_minutes": None,
+            "sla_hours": sla_hours,
+            "sla_due_at": None,
+            "sla_status": "unknown",
+            "is_overdue": False
+        }
+
+    reference_time = now or datetime.now(created_at.tzinfo)
+    age_minutes = max(0, round((reference_time - created_at).total_seconds() / 60, 1))
+    due_at = created_at + timedelta(hours=sla_hours)
+
+    if status == "resolved":
+        sla_status = "resolved"
+        is_overdue = False
+    elif reference_time > due_at:
+        sla_status = "overdue"
+        is_overdue = True
+    elif due_at - reference_time <= timedelta(hours=1):
+        sla_status = "due-soon"
+        is_overdue = False
+    else:
+        sla_status = "on-track"
+        is_overdue = False
+
+    return {
+        "age_minutes": age_minutes,
+        "sla_hours": sla_hours,
+        "sla_due_at": due_at.isoformat(),
+        "sla_status": sla_status,
+        "is_overdue": is_overdue
+    }
+
+
+def get_alerts(
+    limit=20,
+    status="active",
+    severity=None,
+    search=None,
+    priority=None,
+    sla_status=None
+):
     """
     Builds active alerts from high-priority security events.
     Alerts are derived from high/critical severity events and events tagged
@@ -544,6 +692,10 @@ def get_alerts(limit=20, status="active", severity=None, search=None):
     status = str(status or "active").strip().lower()
     severity = str(severity or "").strip().lower()
     search = str(search or "").strip()
+    priority = str(priority or "").strip().lower()
+    sla_status = str(sla_status or "").strip().lower()
+    has_derived_filters = priority in ALERT_PRIORITY_LABELS or sla_status in ALERT_SLA_STATUSES
+    query_limit = 100 if has_derived_filters else limit
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -578,7 +730,7 @@ def get_alerts(limit=20, status="active", severity=None, search=None):
         search_term = f"%{search}%"
         params.extend([search_term, search_term, search_term])
 
-    params.append(limit)
+    params.append(query_limit)
 
     cursor.execute(f"""
         SELECT
@@ -625,11 +777,22 @@ def get_alerts(limit=20, status="active", severity=None, search=None):
             "note": row["alert_note"] or "",
             "status_updated_at": row["alert_updated_at"]
         }
-        priority = calculate_alert_priority(alert)
-        alert["priority_score"] = priority["score"]
-        alert["priority_label"] = priority["label"]
+        priority_data = calculate_alert_priority(alert)
+        alert["priority_score"] = priority_data["score"]
+        alert["priority_label"] = priority_data["label"]
+        alert.update(get_alert_sla(alert))
         alert["incident_key"] = build_incident_key(alert)
+
+        if priority in ALERT_PRIORITY_LABELS and alert["priority_label"] != priority:
+            continue
+
+        if sla_status in ALERT_SLA_STATUSES and alert["sla_status"] != sla_status:
+            continue
+
         alerts.append(alert)
+
+        if len(alerts) >= limit:
+            break
 
     return alerts
 
@@ -925,6 +1088,7 @@ def group_alerts_into_incidents(alerts):
             "event_type": alert.get("event_type") or "unknown",
             "alert_count": 0,
             "open_alerts": 0,
+            "overdue_alerts": 0,
             "highest_priority_score": 0,
             "highest_priority_label": "low",
             "latest_timestamp": alert.get("timestamp"),
@@ -940,6 +1104,9 @@ def group_alerts_into_incidents(alerts):
 
         if alert.get("status") != "resolved":
             incident["open_alerts"] += 1
+
+        if alert.get("is_overdue"):
+            incident["overdue_alerts"] += 1
 
         if (alert.get("priority_score") or 0) > incident["highest_priority_score"]:
             incident["highest_priority_score"] = alert.get("priority_score") or 0
@@ -968,6 +1135,7 @@ def incidents_to_csv(incidents):
         "status",
         "alert_count",
         "open_alerts",
+        "overdue_alerts",
         "highest_priority_score",
         "highest_priority_label",
         "latest_timestamp",
@@ -987,6 +1155,7 @@ def incidents_to_csv(incidents):
             "status": incident.get("status", ""),
             "alert_count": incident.get("alert_count", ""),
             "open_alerts": incident.get("open_alerts", ""),
+            "overdue_alerts": incident.get("overdue_alerts", ""),
             "highest_priority_score": incident.get("highest_priority_score", ""),
             "highest_priority_label": incident.get("highest_priority_label", ""),
             "latest_timestamp": incident.get("latest_timestamp", ""),
@@ -1003,6 +1172,7 @@ def get_alert_summary(alerts):
     severity_counts = {}
     status_counts = {}
     priority_counts = {}
+    sla_counts = {}
 
     for alert in alerts:
         severity = alert.get("severity") or "unknown"
@@ -1011,6 +1181,8 @@ def get_alert_summary(alerts):
         severity_counts[severity] = severity_counts.get(severity, 0) + 1
         status_counts[status] = status_counts.get(status, 0) + 1
         priority_counts[priority] = priority_counts.get(priority, 0) + 1
+        sla_status = alert.get("sla_status") or "unknown"
+        sla_counts[sla_status] = sla_counts.get(sla_status, 0) + 1
 
     incidents = group_alerts_into_incidents(alerts)
 
@@ -1021,9 +1193,12 @@ def get_alert_summary(alerts):
         "resolved_alerts": status_counts.get("resolved", 0),
         "incident_count": len(incidents),
         "highest_priority_score": max([alert.get("priority_score", 0) for alert in alerts], default=0),
+        "overdue_alerts": sla_counts.get("overdue", 0),
+        "due_soon_alerts": sla_counts.get("due-soon", 0),
         "status_counts": status_counts,
         "severity_counts": severity_counts,
-        "priority_counts": priority_counts
+        "priority_counts": priority_counts,
+        "sla_counts": sla_counts
     }
 
 
@@ -1037,6 +1212,11 @@ def alerts_to_csv(alerts):
         "severity",
         "priority_score",
         "priority_label",
+        "age_minutes",
+        "sla_hours",
+        "sla_due_at",
+        "sla_status",
+        "is_overdue",
         "incident_key",
         "status",
         "message",
@@ -1056,6 +1236,11 @@ def alerts_to_csv(alerts):
             "severity": alert.get("severity", ""),
             "priority_score": alert.get("priority_score", ""),
             "priority_label": alert.get("priority_label", ""),
+            "age_minutes": alert.get("age_minutes", ""),
+            "sla_hours": alert.get("sla_hours", ""),
+            "sla_due_at": alert.get("sla_due_at", ""),
+            "sla_status": alert.get("sla_status", ""),
+            "is_overdue": alert.get("is_overdue", False),
             "incident_key": alert.get("incident_key", ""),
             "status": alert.get("status", ""),
             "message": alert.get("message", ""),
@@ -2782,14 +2967,30 @@ def process_network_devices(devices):
         "unknown_devices": unknown_devices
     }
 
-def get_recent_network_devices(limit=50):
+def get_recent_network_devices(limit=50, status=None, search=None, stale_after_hours=24):
     """
     Returns recently seen network devices from SQLite.
+    Supports optional status filtering and free-text search across
+    IP address, hostname, MAC address, and status.
     """
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 50
+
+    limit = max(1, min(limit, 100))
+    status = str(status or "").strip().lower()
+    search = str(search or "").strip()
+
+    try:
+        stale_after_hours = int(stale_after_hours)
+    except (TypeError, ValueError):
+        stale_after_hours = 24
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    query = """
         SELECT
             ip_address,
             hostname,
@@ -2798,9 +2999,33 @@ def get_recent_network_devices(limit=50):
             first_seen,
             last_seen
         FROM network_devices
-        ORDER BY last_seen DESC
-        LIMIT ?
-    """, (limit,))
+    """
+    filters = []
+    params = []
+
+    if status:
+        filters.append("status = ?")
+        params.append(status)
+
+    if search:
+        filters.append("""
+            (
+                ip_address LIKE ?
+                OR hostname LIKE ?
+                OR mac_address LIKE ?
+                OR status LIKE ?
+            )
+        """)
+        search_term = f"%{search}%"
+        params.extend([search_term, search_term, search_term, search_term])
+
+    if filters:
+        query += " WHERE " + " AND ".join(filters)
+
+    query += " ORDER BY last_seen DESC LIMIT ?"
+    params.append(limit)
+
+    cursor.execute(query, params)
 
     rows = cursor.fetchall()
     conn.close()
@@ -2808,16 +3033,74 @@ def get_recent_network_devices(limit=50):
     devices = []
 
     for row in rows:
-        devices.append({
+        device = {
             "ip_address": row["ip_address"],
             "hostname": row["hostname"],
             "status": row["status"],
             "mac_address": row["mac_address"],
             "first_seen": row["first_seen"],
             "last_seen": row["last_seen"]
-        })
+        }
+        device["is_stale"] = is_network_device_stale(device, stale_after_hours=stale_after_hours)
+        devices.append(device)
 
     return devices
+
+
+def get_network_device_summary(devices):
+    status_counts = {}
+    stale_devices = 0
+    latest_device = None
+
+    for device in devices:
+        status = device.get("status") or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+        if device.get("is_stale"):
+            stale_devices += 1
+
+        if (
+            latest_device is None
+            or str(device.get("last_seen") or "") > str(latest_device.get("last_seen") or "")
+        ):
+            latest_device = device
+
+    return {
+        "total_devices": len(devices),
+        "online_devices": status_counts.get("online", 0),
+        "offline_devices": status_counts.get("offline", 0),
+        "stale_devices": stale_devices,
+        "status_counts": status_counts,
+        "latest_device": latest_device
+    }
+
+
+def network_devices_to_csv(devices):
+    output = io.StringIO()
+    fieldnames = [
+        "ip_address",
+        "hostname",
+        "status",
+        "mac_address",
+        "first_seen",
+        "last_seen",
+        "is_stale"
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+
+    for device in devices:
+        writer.writerow({
+            "ip_address": device.get("ip_address", ""),
+            "hostname": device.get("hostname", ""),
+            "status": device.get("status", ""),
+            "mac_address": device.get("mac_address", ""),
+            "first_seen": device.get("first_seen", ""),
+            "last_seen": device.get("last_seen", ""),
+            "is_stale": device.get("is_stale", False)
+        })
+
+    return output.getvalue()
 
 # =========================
 # Route Helpers
@@ -3275,19 +3558,34 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 
         return False
         
+    def get_event_filters(self, query_params, default_limit="50"):
+        limit = query_params.get("limit", [default_limit])[0]
+
+        return {
+            "limit": limit,
+            "severity": query_params.get("severity", [None])[0],
+            "tag": query_params.get("tag", [None])[0],
+            "event_type": query_params.get("event_type", [None])[0],
+            "source": query_params.get("source", [None])[0],
+            "q": query_params.get("q", [None])[0],
+            "since_hours": query_params.get("since_hours", [None])[0]
+        }
+
     def handle_events(self, ctx, query_params):
         """
         Handles GET /api/v1/events.
         Returns recent security events with optional filters.
         """
-        limit = query_params.get("limit", ["50"])[0]
-        severity = query_params.get("severity", [None])[0]
-        tag = query_params.get("tag", [None])[0]
+        filters = self.get_event_filters(query_params)
 
         events = get_security_events(
-            limit=limit,
-            severity=severity,
-            tag=tag
+            limit=filters["limit"],
+            severity=filters["severity"],
+            tag=filters["tag"],
+            event_type=filters["event_type"],
+            source=filters["source"],
+            search=filters["q"],
+            since_hours=filters["since_hours"]
         )
 
         log_request(ctx, 200, "Security events requested")
@@ -3298,13 +3596,32 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "events": events,
                 "count": len(events),
                 "filters": {
-                    "limit": int(limit) if str(limit).isdigit() else 50,
-                    "severity": severity,
-                    "tag": tag
+                    "limit": int(filters["limit"]) if str(filters["limit"]).isdigit() else 50,
+                    "severity": filters["severity"],
+                    "tag": filters["tag"],
+                    "event_type": filters["event_type"],
+                    "source": filters["source"],
+                    "q": filters["q"],
+                    "since_hours": filters["since_hours"]
                 }
             },
             request_id=ctx.request_id
-        ) 
+        )
+
+    def handle_events_export(self, ctx, query_params):
+        filters = self.get_event_filters(query_params, default_limit="100")
+        events = get_security_events(
+            limit=filters["limit"],
+            severity=filters["severity"],
+            tag=filters["tag"],
+            event_type=filters["event_type"],
+            source=filters["source"],
+            search=filters["q"],
+            since_hours=filters["since_hours"]
+        )
+
+        log_request(ctx, 200, "Security events CSV exported")
+        self.send_csv_response("zerosoc-security-events.csv", events_to_csv(events), ctx.request_id)
         
     def handle_events_summary(self, ctx):
         summary = get_events_summary()
@@ -3322,11 +3639,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         status = query_params.get("status", ["active"])[0]
         severity = query_params.get("severity", [None])[0]
         search = query_params.get("q", [None])[0]
+        priority = query_params.get("priority", [None])[0]
+        sla_status = query_params.get("sla_status", [None])[0]
         alerts = get_alerts(
             limit=limit,
             status=status,
             severity=severity,
-            search=search
+            search=search,
+            priority=priority,
+            sla_status=sla_status
         )
 
         log_request(ctx, 200, "Alerts requested")
@@ -3342,7 +3663,9 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                     "limit": int(limit) if str(limit).isdigit() else 20,
                     "status": status,
                     "severity": severity,
-                    "q": search
+                    "q": search,
+                    "priority": priority,
+                    "sla_status": sla_status
                 }
             },
             request_id=ctx.request_id
@@ -3410,11 +3733,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         status = query_params.get("status", ["active"])[0]
         severity = query_params.get("severity", [None])[0]
         search = query_params.get("q", [None])[0]
+        priority = query_params.get("priority", [None])[0]
+        sla_status = query_params.get("sla_status", [None])[0]
         alerts = get_alerts(
             limit=limit,
             status=status,
             severity=severity,
-            search=search
+            search=search,
+            priority=priority,
+            sla_status=sla_status
         )
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         csv_body = alerts_to_csv(alerts)
@@ -3432,11 +3759,15 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         status = query_params.get("status", ["active"])[0]
         severity = query_params.get("severity", [None])[0]
         search = query_params.get("q", [None])[0]
+        priority = query_params.get("priority", [None])[0]
+        sla_status = query_params.get("sla_status", [None])[0]
         alerts = get_alerts(
             limit=limit,
             status=status,
             severity=severity,
-            search=search
+            search=search,
+            priority=priority,
+            sla_status=sla_status
         )
         incidents = group_alerts_into_incidents(alerts)
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -4022,8 +4353,22 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             request_id=ctx.request_id
         )
         
-    def handle_devices(self, ctx):
-        devices = get_recent_network_devices(limit=50)
+    def get_device_filters(self, query_params, default_limit="50"):
+        limit = query_params.get("limit", [default_limit])[0]
+
+        return {
+            "limit": limit,
+            "status": query_params.get("status", [None])[0],
+            "q": query_params.get("q", [None])[0]
+        }
+
+    def handle_devices(self, ctx, query_params=None):
+        filters = self.get_device_filters(query_params or {})
+        devices = get_recent_network_devices(
+            limit=filters["limit"],
+            status=filters["status"],
+            search=filters["q"]
+        )
 
         log_request(ctx, 200, "Network devices requested")
 
@@ -4031,10 +4376,27 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             200,
             data={
                 "devices": devices,
-                "count": len(devices)
+                "count": len(devices),
+                "summary": get_network_device_summary(devices),
+                "filters": {
+                    "limit": int(filters["limit"]) if str(filters["limit"]).isdigit() else 50,
+                    "status": filters["status"],
+                    "q": filters["q"]
+                }
             },
             request_id=ctx.request_id
         )
+
+    def handle_devices_export(self, ctx, query_params):
+        filters = self.get_device_filters(query_params, default_limit="100")
+        devices = get_recent_network_devices(
+            limit=filters["limit"],
+            status=filters["status"],
+            search=filters["q"]
+        )
+
+        log_request(ctx, 200, "Network devices CSV exported")
+        self.send_csv_response("zerosoc-network-devices.csv", network_devices_to_csv(devices), ctx.request_id)
         
     def handle_network_scan(self, ctx):
         scan_result = scan_network()
@@ -4062,7 +4424,8 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
                 "device_count": len(processed["devices"]),
                 "unknown_device_count": len(processed["unknown_devices"]),
                 "devices": processed["devices"],
-                "unknown_devices": processed["unknown_devices"]
+                "unknown_devices": processed["unknown_devices"],
+                "summary": get_network_device_summary(processed["devices"])
             },
             request_id=ctx.request_id
         )
@@ -4219,6 +4582,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.handle_events_summary(ctx)
             return
 
+        if endpoint == "/api/v1/events/export":
+            self.handle_events_export(ctx, query_params)
+            return
+
         if endpoint == "/api/v1/alerts":
             self.handle_alerts(ctx, query_params)
             return
@@ -4271,8 +4638,12 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.handle_event_by_id(ctx, endpoint)
             return
 
+        if endpoint == "/api/v1/devices/export":
+            self.handle_devices_export(ctx, query_params)
+            return
+
         if endpoint == "/api/v1/devices":
-            self.handle_devices(ctx)
+            self.handle_devices(ctx, query_params)
             return
 
         if endpoint == "/api/v1/network/scan":
@@ -4403,6 +4774,7 @@ def run_server():
     print("  /api/v1/status")
     print("  /api/v1/system")
     print("  /api/v1/events")
+    print("  /api/v1/events/export")
     print("  /api/v1/events/{id}")
     print("  /api/v1/events/summary")
     print("  /api/v1/alerts")
@@ -4412,6 +4784,7 @@ def run_server():
     print("  /api/v1/alerts/notifications")
     print("  /api/v1/alerts/{id}/status")
     print("  /api/v1/devices")
+    print("  /api/v1/devices/export")
     print("  /api/v1/network/scan")
     print("  /api/v1/logs/recent")
     print("  /api/v1/metrics")
