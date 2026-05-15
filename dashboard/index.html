@@ -89,6 +89,26 @@
         </section>
 
         <section class="card wide">
+            <h2>Security Event Analytics</h2>
+
+           <div class="chart-grid compact-charts">
+               <div class="chart-card">
+                    <h3>Events by Severity</h3>
+                    <div class="chart-box">
+                        <canvas id="severityChart" width="360" height="220"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h3>Events by Type</h3>
+                    <div class="chart-box">
+                         <canvas id="eventTypeChart" width="420" height="220"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="card wide">
             <div class="section-heading">
                 <h2>Active Alerts</h2>
                 <div id="alertSeverityFilters" class="segmented-control" aria-label="Alert severity filter">
@@ -213,11 +233,33 @@
         </section>
 
         <section class="card wide">
-            <h2>Security Events</h2>
-            <div id="eventsTable" class="table-wrap">
-                Loading events...
-            </div>
-        </section>
+    <div class="section-heading">
+        <h2>Security Events</h2>
+    </div>
+
+    <div class="alert-tools">
+        <label for="eventSearchInput">Search events</label>
+        <input
+            id="eventSearchInput"
+            type="search"
+            placeholder="Source IP, type, severity, tag, or message"
+            autocomplete="off"
+        />
+
+        <label for="severityFilter">Severity</label>
+        <select id="severityFilter">
+            <option value="all">All</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+        </select>
+    </div>
+
+    <div id="eventsTable" class="table-wrap">
+        Loading events...
+    </div>
+</section>
 
         <section class="card wide">
             <h2>Network Devices</h2>
@@ -231,6 +273,7 @@
         <span id="lastUpdated">Last updated: never</span>
     </footer>
 
-    <script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

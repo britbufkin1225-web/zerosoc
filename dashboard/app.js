@@ -15,6 +15,8 @@ const alertNotificationsPanel = document.getElementById("alertNotificationsPanel
 const alertReportsPanel = document.getElementById("alertReportsPanel");
 const reportActivityPanel = document.getElementById("reportActivityPanel");
 const eventsTable = document.getElementById("eventsTable");
+const eventSearchInput = document.getElementById("eventSearchInput");
+const severityFilter = document.getElementById("severityFilter");
 const devicesTable = document.getElementById("devicesTable");
 const lastUpdated = document.getElementById("lastUpdated");
 const refreshButton = document.getElementById("refreshButton");
@@ -38,6 +40,8 @@ let activeIncidentStatus = "all";
 let activeReportStatus = "all";
 let activeReportSearch = "";
 let activeReportActivityAction = "all";
+let severityChartInstance = null;
+let eventTypeChartInstance = null;
 
 async function fetchApi(endpoint) {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -260,6 +264,8 @@ function renderEventSummary(summary) {
     const tagCounts = getCountMap(summary, "by_tag", "tag_counts");
     const latestEvent = summary.latest_event;
 
+    renderSummaryCharts(summary);
+
     const sortedSeverities = ["critical", "high", "medium", "low", "unknown"]
         .filter(severity => severityCounts[severity] !== undefined)
         .map(severity => [severity, severityCounts[severity]]);
@@ -301,6 +307,161 @@ function renderEventSummary(summary) {
     `;
 }
 
+function renderSummaryCharts(summary) {
+    const severityCounts = getCountMap(summary, "by_severity", "severity_counts");
+    const eventTypeCounts = getCountMap(summary, "by_event_type", "event_type_counts");
+
+    renderSeverityChart(severityCounts);
+    renderEventTypeChart(eventTypeCounts);
+}
+
+function renderSeverityChart(severityCounts) {
+    const chartElement = document.getElementById("severityChart");
+
+    if (!chartElement || typeof Chart === "undefined") {
+        return;
+    }
+
+    chartElement.width = 300;
+    chartElement.height = 210;
+    chartElement.style.width = "300px";
+    chartElement.style.height = "210px";
+
+    const labels = Object.keys(severityCounts);
+    const values = Object.values(severityCounts);
+
+    if (severityChartInstance) {
+        severityChartInstance.destroy();
+    }
+
+    severityChartInstance = new Chart(chartElement, {
+        type: "doughnut",
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: "Events by Severity",
+                    data: values
+                }
+            ]
+        },
+        options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            cutout: "55%",
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: {
+                        color: "#f9fafb",
+                        boxWidth: 16,
+                        padding: 12
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderEventTypeChart(eventTypeCounts) {
+    const chartElement = document.getElementById("eventTypeChart");
+
+    if (!chartElement || typeof Chart === "undefined") {
+        return;
+    }
+
+    chartElement.width = 520;
+    chartElement.height = 220;
+    chartElement.style.width = "520px";
+    chartElement.style.height = "220px";
+    chartElement.style.maxWidth = "100%";
+
+    const labels = Object.keys(eventTypeCounts);
+    const values = Object.values(eventTypeCounts);
+
+    if (eventTypeChartInstance) {
+        eventTypeChartInstance.destroy();
+    }
+
+    eventTypeChartInstance = new Chart(chartElement, {
+        type: "bar",
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: "Events by Type",
+                    data: values
+                }
+            ]
+        },
+        options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    ticks: {
+                        color: "#f9fafb",
+                        font: {
+                            size: 10
+                        }
+                    },
+                    grid: {
+                        color: "#374151"
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: "#f9fafb",
+                        precision: 0
+                    },
+                    grid: {
+                        color: "#374151"
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+function filterSecurityEvents(events) {
+    const searchValue = eventSearchInput
+        ? eventSearchInput.value.toLowerCase().trim()
+        : "";
+
+    const selectedSeverity = severityFilter
+        ? severityFilter.value
+        : "all";
+
+    return events.filter((event) => {
+        const severity = String(event.severity || "").toLowerCase();
+
+        const searchableText = [
+            event.id,
+            event.timestamp,
+            event.created_at,
+            event.source_ip,
+            event.event_type,
+            event.type,
+            event.severity,
+            event.tag,
+            event.message,
+            event.description
+        ]
+            .join(" ")
+            .toLowerCase();
+
+        const matchesSearch = searchableText.includes(searchValue);
+        const matchesSeverity =
+            selectedSeverity === "all" || severity === selectedSeverity;
+
+        return matchesSearch && matchesSeverity;
+    });
+}
 function setApiStatus(statusClass, text) {
     apiStatusIndicator.classList.remove("status-good", "status-warning", "status-danger", "status-neutral");
     apiStatusIndicator.classList.add(statusClass);
@@ -902,9 +1063,15 @@ async function openPrintableReport(reportId) {
 
 function renderEvents(data) {
     const events = Array.isArray(data) ? data : data.events || [];
+    const visibleEvents = filterSecurityEvents(events);
 
     if (events.length === 0) {
         eventsTable.innerHTML = "<p>No security events found.</p>";
+        return;
+    }
+
+    if (visibleEvents.length === 0) {
+        eventsTable.innerHTML = "<p>No matching security events found.</p>";
         return;
     }
 
@@ -913,19 +1080,23 @@ function renderEvents(data) {
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Source IP</th>
                     <th>Type</th>
                     <th>Severity</th>
+                    <th>Tag</th>
                     <th>Message</th>
                     <th>Timestamp</th>
                 </tr>
             </thead>
             <tbody>
-                ${events.map(event => `
+                ${visibleEvents.map(event => `
                     <tr>
-                        <td>${formatValue(event.id)}</td>
-                        <td>${formatValue(event.event_type || event.type)}</td>
+                        <td>${formatHtmlValue(event.id)}</td>
+                        <td>${formatHtmlValue(event.source_ip)}</td>
+                        <td>${formatHtmlValue(event.event_type || event.type)}</td>
                         <td>${severityBadge(event.severity)}</td>
-                        <td>${formatValue(event.message || event.description)}</td>
+                        <td>${formatHtmlValue(event.tag)}</td>
+                        <td>${formatHtmlValue(event.message || event.description)}</td>
                         <td>${formatTimestamp(event.timestamp || event.created_at)}</td>
                     </tr>
                 `).join("")}
@@ -1336,6 +1507,14 @@ async function loadDashboard() {
 }
 
 refreshButton.addEventListener("click", loadDashboard);
+
+if (eventSearchInput) {
+    eventSearchInput.addEventListener("input", loadDashboard);
+}
+
+if (severityFilter) {
+    severityFilter.addEventListener("change", loadDashboard);
+}
 
 alertSeverityFilters.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-alert-severity]");
