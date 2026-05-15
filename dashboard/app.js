@@ -17,12 +17,21 @@ const reportActivityPanel = document.getElementById("reportActivityPanel");
 const eventsTable = document.getElementById("eventsTable");
 const eventSearchInput = document.getElementById("eventSearchInput");
 const severityFilter = document.getElementById("severityFilter");
+const eventTimeRangeFilter = document.getElementById("eventTimeRangeFilter");
+const exportEventsButton = document.getElementById("exportEventsButton");
+const deviceSummaryPanel = document.getElementById("deviceSummaryPanel");
 const devicesTable = document.getElementById("devicesTable");
+const deviceSearchInput = document.getElementById("deviceSearchInput");
+const deviceStatusFilter = document.getElementById("deviceStatusFilter");
+const scanNetworkButton = document.getElementById("scanNetworkButton");
+const exportDevicesButton = document.getElementById("exportDevicesButton");
 const lastUpdated = document.getElementById("lastUpdated");
 const refreshButton = document.getElementById("refreshButton");
 const notifyAlertsButton = document.getElementById("notifyAlertsButton");
 const notifyWebhookButton = document.getElementById("notifyWebhookButton");
 const alertSeverityFilters = document.getElementById("alertSeverityFilters");
+const alertPriorityFilters = document.getElementById("alertPriorityFilters");
+const alertSlaFilters = document.getElementById("alertSlaFilters");
 const alertSearchInput = document.getElementById("alertSearchInput");
 const exportAlertsButton = document.getElementById("exportAlertsButton");
 const exportIncidentsButton = document.getElementById("exportIncidentsButton");
@@ -33,6 +42,8 @@ const exportReportActivityButton = document.getElementById("exportReportActivity
 const apiStatusIndicator = document.getElementById("apiStatusIndicator");
 const apiStatusText = document.getElementById("apiStatusText");
 let activeAlertSeverity = "all";
+let activeAlertPriority = "all";
+let activeAlertSla = "all";
 let activeAlertSearch = "";
 let activeIncidentKey = "";
 let activeIncidentOwner = "";
@@ -40,6 +51,11 @@ let activeIncidentStatus = "all";
 let activeReportStatus = "all";
 let activeReportSearch = "";
 let activeReportActivityAction = "all";
+let activeEventSearch = "";
+let activeEventSeverity = "all";
+let activeEventSinceHours = "all";
+let activeDeviceSearch = "";
+let activeDeviceStatus = "all";
 let severityChartInstance = null;
 let eventTypeChartInstance = null;
 
@@ -428,40 +444,6 @@ function renderEventTypeChart(eventTypeCounts) {
         }
     });
 }
-function filterSecurityEvents(events) {
-    const searchValue = eventSearchInput
-        ? eventSearchInput.value.toLowerCase().trim()
-        : "";
-
-    const selectedSeverity = severityFilter
-        ? severityFilter.value
-        : "all";
-
-    return events.filter((event) => {
-        const severity = String(event.severity || "").toLowerCase();
-
-        const searchableText = [
-            event.id,
-            event.timestamp,
-            event.created_at,
-            event.source_ip,
-            event.event_type,
-            event.type,
-            event.severity,
-            event.tag,
-            event.message,
-            event.description
-        ]
-            .join(" ")
-            .toLowerCase();
-
-        const matchesSearch = searchableText.includes(searchValue);
-        const matchesSeverity =
-            selectedSeverity === "all" || severity === selectedSeverity;
-
-        return matchesSearch && matchesSeverity;
-    });
-}
 function setApiStatus(statusClass, text) {
     apiStatusIndicator.classList.remove("status-good", "status-warning", "status-danger", "status-neutral");
     apiStatusIndicator.classList.add(statusClass);
@@ -512,6 +494,14 @@ function priorityBadge(alert) {
     return `<span class="priority-pill priority-${formatAttribute(label)}">${formatHtmlValue(label)} ${score}</span>`;
 }
 
+function slaBadge(alert) {
+    const status = String(alert.sla_status || "unknown").toLowerCase();
+    const dueAt = alert.sla_due_at ? ` due ${formatTimestamp(alert.sla_due_at)}` : "";
+    const label = status.replace("-", " ");
+
+    return `<span class="status-pill status-${formatAttribute(status)}">SLA ${formatHtmlValue(label)}${formatHtmlValue(dueAt)}</span>`;
+}
+
 function renderAlertCard(alert, mode = "active") {
     const status = String(alert.status || "open").toLowerCase();
     const note = String(alert.note || "").trim();
@@ -522,6 +512,7 @@ function renderAlertCard(alert, mode = "active") {
             <div class="alert-header">
                 ${severityBadge(alert.severity)}
                 ${priorityBadge(alert)}
+                ${slaBadge(alert)}
                 <span class="status-pill">${formatHtmlValue(alert.status || "open")}</span>
             </div>
             <div class="alert-body">
@@ -615,6 +606,7 @@ function renderIncidentGroups(data) {
                     </div>
                     <div class="alert-meta">
                         <span>${formatHtmlValue(incident.open_alerts)} unresolved</span>
+                        <span>${formatHtmlValue(incident.overdue_alerts || 0)} overdue</span>
                         <span>Latest ${formatTimestamp(incident.latest_timestamp)}</span>
                     </div>
                     <div class="incident-state">
@@ -910,6 +902,8 @@ async function deliverAlertNotifications(channel = "dashboard") {
 async function exportAlertsCsv() {
     const endpoint = `/api/v1/alerts/export${buildQueryString({
         severity: activeAlertSeverity,
+        priority: activeAlertPriority,
+        sla_status: activeAlertSla,
         q: activeAlertSearch
     })}`;
     const blob = await fetchFile(endpoint);
@@ -928,6 +922,8 @@ async function exportAlertsCsv() {
 async function exportIncidentsCsv() {
     const endpoint = `/api/v1/alerts/incidents/export${buildQueryString({
         severity: activeAlertSeverity,
+        priority: activeAlertPriority,
+        sla_status: activeAlertSla,
         q: activeAlertSearch
     })}`;
     const blob = await fetchFile(endpoint);
@@ -937,6 +933,49 @@ async function exportIncidentsCsv() {
 
     link.href = objectUrl;
     link.download = `zerosoc-alert-incidents-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+function getEventQuery() {
+    return {
+        severity: activeEventSeverity,
+        q: activeEventSearch,
+        since_hours: activeEventSinceHours
+    };
+}
+
+function getDeviceQuery() {
+    return {
+        status: activeDeviceStatus,
+        q: activeDeviceSearch
+    };
+}
+
+async function exportEventsCsv() {
+    const blob = await fetchFile(`/api/v1/events/export${buildQueryString(getEventQuery())}`);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-security-events-${timestamp}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+}
+
+async function exportDevicesCsv() {
+    const blob = await fetchFile(`/api/v1/devices/export${buildQueryString(getDeviceQuery())}`);
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = objectUrl;
+    link.download = `zerosoc-network-devices-${timestamp}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1062,13 +1101,7 @@ async function openPrintableReport(reportId) {
 }
 
 function renderEvents(data) {
-    const events = Array.isArray(data) ? data : data.events || [];
-    const visibleEvents = filterSecurityEvents(events);
-
-    if (events.length === 0) {
-        eventsTable.innerHTML = "<p>No security events found.</p>";
-        return;
-    }
+    const visibleEvents = Array.isArray(data) ? data : data.events || [];
 
     if (visibleEvents.length === 0) {
         eventsTable.innerHTML = "<p>No matching security events found.</p>";
@@ -1095,7 +1128,7 @@ function renderEvents(data) {
                         <td>${formatHtmlValue(event.source_ip)}</td>
                         <td>${formatHtmlValue(event.event_type || event.type)}</td>
                         <td>${severityBadge(event.severity)}</td>
-                        <td>${formatHtmlValue(event.tag)}</td>
+                        <td>${formatHtmlValue(event.tag || (event.tags || []).join(", "))}</td>
                         <td>${formatHtmlValue(event.message || event.description)}</td>
                         <td>${formatTimestamp(event.timestamp || event.created_at)}</td>
                     </tr>
@@ -1105,8 +1138,40 @@ function renderEvents(data) {
     `;
 }
 
+function renderDeviceSummary(data) {
+    const devices = Array.isArray(data) ? data : data.devices || [];
+    const summary = (Array.isArray(data) ? null : data.summary) || {};
+    const staleCount = summary.stale_devices ?? devices.filter(device => device.is_stale).length;
+    const onlineCount = summary.online_devices ?? devices.filter(device => device.status === "online").length;
+    const offlineCount = summary.offline_devices ?? devices.filter(device => device.status === "offline").length;
+    const latestDevice = summary.latest_device;
+
+    deviceSummaryPanel.innerHTML = `
+        <div class="summary-detail-grid compact-summary">
+            <div>
+                <h3>Total</h3>
+                <p class="summary-total">${formatValue(summary.total_devices ?? devices.length)}</p>
+            </div>
+            <div>
+                <h3>Online</h3>
+                <p class="summary-total">${formatValue(onlineCount)}</p>
+            </div>
+            <div>
+                <h3>Offline</h3>
+                <p class="summary-total">${formatValue(offlineCount)}</p>
+            </div>
+            <div>
+                <h3>Stale</h3>
+                <p class="summary-total">${formatValue(staleCount)}</p>
+                ${latestDevice ? `<p class="muted">Latest: ${formatHtmlValue(latestDevice.ip_address)} at ${formatTimestamp(latestDevice.last_seen)}</p>` : ""}
+            </div>
+        </div>
+    `;
+}
+
 function renderDevices(data) {
     const devices = Array.isArray(data) ? data : data.devices || [];
+    renderDeviceSummary(data);
 
     if (devices.length === 0) {
         devicesTable.innerHTML = "<p>No network devices found.</p>";
@@ -1121,6 +1186,7 @@ function renderDevices(data) {
                     <th>MAC Address</th>
                     <th>Hostname</th>
                     <th>Status</th>
+                    <th>Freshness</th>
                     <th>Last Seen</th>
                 </tr>
             </thead>
@@ -1131,6 +1197,7 @@ function renderDevices(data) {
                         <td>${formatValue(device.mac || device.mac_address)}</td>
                         <td>${formatValue(device.hostname)}</td>
                         <td>${formatValue(device.status || device.device_status || "unknown")}</td>
+                        <td>${device.is_stale ? '<span class="badge badge-medium">stale</span>' : '<span class="badge badge-low">fresh</span>'}</td>
                         <td>${formatTimestamp(device.last_seen)}</td>
                     </tr>
                 `).join("")}
@@ -1166,7 +1233,9 @@ function updateSummaryCards(system, events, alerts, devices, metrics, eventSumma
         apiCard.textContent = `${totalRequests} requests`;
     }
     eventsCard.textContent = eventSummaryData.total_events ?? eventList.length;
-    alertsCard.textContent = alertSummary.open_alerts ?? alertList.length;
+    alertsCard.textContent = alertSummary.overdue_alerts
+        ? `${alertSummary.overdue_alerts} overdue`
+        : `${alertSummary.open_alerts ?? alertList.length} open`;
     notificationsCard.textContent = notificationSummary.failed_notifications
         ? `${notificationSummary.failed_notifications} failed`
         : `${notificationSummary.delivered_notifications || 0} sent`;
@@ -1361,14 +1430,19 @@ async function loadDashboard() {
     reportActivityPanel.innerHTML = "Loading report activity...";
     resolvedAlertsPanel.innerHTML = "Loading resolved alerts...";
     eventsTable.innerHTML = "Loading events...";
+    deviceSummaryPanel.innerHTML = "Loading device summary...";
     devicesTable.innerHTML = "Loading devices...";
     setApiStatus("status-neutral", "API checking");
 
     try {
         const activeAlertsEndpoint = `/api/v1/alerts${buildQueryString({
             severity: activeAlertSeverity,
+            priority: activeAlertPriority,
+            sla_status: activeAlertSla,
             q: activeAlertSearch
         })}`;
+        const eventsEndpoint = `/api/v1/events${buildQueryString(getEventQuery())}`;
+        const devicesEndpoint = `/api/v1/devices${buildQueryString(getDeviceQuery())}`;
         const reportQuery = activeReportStatus === "archived"
             ? {
                 include_archived: "only",
@@ -1398,8 +1472,8 @@ async function loadDashboard() {
             fetchApi(alertReportsEndpoint),
             fetchApi(reportActivityEndpoint),
             fetchApi("/api/v1/alerts?status=resolved"),
-            fetchApi("/api/v1/events"),
-            fetchApi("/api/v1/devices")
+            fetchApi(eventsEndpoint),
+            fetchApi(devicesEndpoint)
         ]);
 
         const system = systemData.data || systemData;
@@ -1509,11 +1583,111 @@ async function loadDashboard() {
 refreshButton.addEventListener("click", loadDashboard);
 
 if (eventSearchInput) {
-    eventSearchInput.addEventListener("input", loadDashboard);
+    eventSearchInput.addEventListener("input", () => {
+        activeEventSearch = eventSearchInput.value.trim();
+        loadDashboard();
+    });
 }
 
 if (severityFilter) {
-    severityFilter.addEventListener("change", loadDashboard);
+    severityFilter.addEventListener("change", () => {
+        activeEventSeverity = severityFilter.value;
+        loadDashboard();
+    });
+}
+
+if (eventTimeRangeFilter) {
+    eventTimeRangeFilter.addEventListener("change", () => {
+        activeEventSinceHours = eventTimeRangeFilter.value;
+        loadDashboard();
+    });
+}
+
+if (deviceSearchInput) {
+    deviceSearchInput.addEventListener("input", () => {
+        activeDeviceSearch = deviceSearchInput.value.trim();
+        loadDashboard();
+    });
+}
+
+if (deviceStatusFilter) {
+    deviceStatusFilter.addEventListener("change", () => {
+        activeDeviceStatus = deviceStatusFilter.value;
+        loadDashboard();
+    });
+}
+
+if (exportEventsButton) {
+    exportEventsButton.addEventListener("click", async () => {
+        exportEventsButton.disabled = true;
+        exportEventsButton.textContent = "Exporting...";
+
+        try {
+            await exportEventsCsv();
+            setApiStatus("status-good", "Events exported");
+        } finally {
+            exportEventsButton.disabled = false;
+            exportEventsButton.textContent = "Export Events";
+        }
+    });
+}
+
+if (scanNetworkButton) {
+    scanNetworkButton.addEventListener("click", async () => {
+        scanNetworkButton.disabled = true;
+        scanNetworkButton.textContent = "Scanning...";
+        setApiStatus("status-neutral", "Network scan running");
+
+        try {
+            await fetchApi("/api/v1/network/scan");
+            setApiStatus("status-good", "Network scan complete");
+            await loadDashboard();
+        } finally {
+            scanNetworkButton.disabled = false;
+            scanNetworkButton.textContent = "Run Scan";
+        }
+    });
+}
+
+if (exportDevicesButton) {
+    exportDevicesButton.addEventListener("click", async () => {
+        exportDevicesButton.disabled = true;
+        exportDevicesButton.textContent = "Exporting...";
+
+        try {
+            await exportDevicesCsv();
+            setApiStatus("status-good", "Devices exported");
+        } finally {
+            exportDevicesButton.disabled = false;
+            exportDevicesButton.textContent = "Export Devices";
+        }
+    });
+}
+
+function bindSegmentedFilter(container, selector, activeClass, onSelect) {
+    if (!container) {
+        return;
+    }
+
+    container.addEventListener("click", async (event) => {
+        const button = event.target.closest(selector);
+
+        if (!button) {
+            return;
+        }
+
+        onSelect(button);
+        container
+            .querySelectorAll(selector)
+            .forEach(filterButton => {
+                filterButton.classList.toggle(
+                    "active",
+                    filterButton.dataset[activeClass] === button.dataset[activeClass]
+                );
+            });
+
+        await loadDashboard();
+    });
 }
 
 alertSeverityFilters.addEventListener("click", async (event) => {
@@ -1535,6 +1709,14 @@ alertSeverityFilters.addEventListener("click", async (event) => {
         });
 
     await loadDashboard();
+});
+
+bindSegmentedFilter(alertPriorityFilters, "[data-alert-priority]", "alertPriority", (button) => {
+    activeAlertPriority = button.dataset.alertPriority || "all";
+});
+
+bindSegmentedFilter(alertSlaFilters, "[data-alert-sla]", "alertSla", (button) => {
+    activeAlertSla = button.dataset.alertSla || "all";
 });
 
 alertSearchInput.addEventListener("input", async () => {

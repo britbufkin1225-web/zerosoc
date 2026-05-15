@@ -23,13 +23,17 @@ ZeroSOC currently includes:
 - Event auto-tagging
 - Event severity classification
 - Event summary reporting
+- Time-window filtering for security event review
 - Local network device scanning
 - Unknown device detection
 - Automatic alert creation from notable events
 - Alert status workflow
+- Alert SLA tracking with overdue and due-soon states
+- Priority and SLA filtering for alert queues
 - Incident grouping
+- Incident overdue-alert rollups
 - Investigation report tracking
-- CSV export support
+- CSV export support for alerts, incidents, security events, network devices, and investigation activity
 - Web dashboard using HTML, CSS, and JavaScript
 - Dashboard summary cards
 - System status panel
@@ -37,12 +41,15 @@ ZeroSOC currently includes:
 - Event summary dashboard section
 - Security event analytics charts
 - Searchable and filterable security events table
+- Exportable security event evidence CSVs
 - Active alerts section
 - Alert notifications section
 - Investigation reports section
 - Report activity tracking
 - Resolved alerts section
-- Network devices table
+- Searchable, filterable, and exportable network devices table
+- Device freshness summaries with stale-device visibility
+- Dashboard-triggered network scans
 
 ---
 
