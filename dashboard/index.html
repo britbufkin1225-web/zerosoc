@@ -247,35 +247,19 @@
         </section>
 
         <section class="card wide">
-            <div class="section-heading">
-                <h2>Security Events</h2>
-            </div>
+    <div class="section-heading">
+        <h2>Security Events</h2>
+    </div>
 
-            <div class="alert-tools">
-                <label for="eventSearchInput">Search events</label>
-                <input
-                    id="eventSearchInput"
-                    type="search"
-                    placeholder="Source IP, type, severity, tag, or message"
-                    autocomplete="off"
-                />
+    <div class="alert-tools">
+        <label for="eventSearchInput">Search events</label>
+        <input
+            id="eventSearchInput"
+            type="search"
+            placeholder="Source IP, type, severity, tag, or message"
+            autocomplete="off"
+        />
 
-                <label for="severityFilter">Severity</label>
-                <select id="severityFilter">
-                    <option value="all">All</option>
-                    <option value="critical">Critical</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                </select>
-
-                <label for="eventTimeRangeFilter">Time Range</label>
-                <select id="eventTimeRangeFilter">
-                    <option value="all">All Time</option>
-                    <option value="1">Last Hour</option>
-                    <option value="24">Last 24 Hours</option>
-                    <option value="168">Last 7 Days</option>
-                </select>
         <label for="severityFilter">Severity</label>
         <select id="severityFilter">
             <option value="all">All</option>
@@ -296,13 +280,10 @@
         <button id="exportEventsButton" type="button">Export Events</button>
     </div>
 
-                <button id="exportEventsButton" type="button">Export Events</button>
-            </div>
-
-            <div id="eventsTable" class="table-wrap">
-                Loading events...
-            </div>
-        </section>
+    <div id="eventsTable" class="table-wrap">
+        Loading events...
+    </div>
+</section>
 
         <section class="card wide">
             <div class="section-heading">
