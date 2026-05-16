@@ -368,11 +368,11 @@ function renderSeverityChart(severityCounts) {
             plugins: {
                 legend: {
                     position: "top",
-                    labels: {
-                        color: "#f9fafb",
-                        boxWidth: 16,
-                        padding: 12
-                    }
+            labels: {
+                color: "#667085",
+                boxWidth: 16,
+                padding: 12
+            }
                 }
             }
         }
@@ -416,23 +416,23 @@ function renderEventTypeChart(eventTypeCounts) {
             scales: {
                 x: {
                     ticks: {
-                        color: "#f9fafb",
+                        color: "#667085",
                         font: {
                             size: 10
                         }
                     },
                     grid: {
-                        color: "#374151"
+                        color: "#e5edf6"
                     }
                 },
                 y: {
                     beginAtZero: true,
                     ticks: {
-                        color: "#f9fafb",
+                        color: "#667085",
                         precision: 0
                     },
                     grid: {
-                        color: "#374151"
+                        color: "#e5edf6"
                     }
                 }
             },
