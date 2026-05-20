@@ -56,55 +56,48 @@ ZeroSOC currently includes:
 
 ## Dashboard Preview
 
-ZeroSOC includes a browser-based dashboard that displays backend API data in a refreshed SOC-style interface with cleaner contrast, readable cards, accessible focus states, and responsive filter toolbars.
+ZeroSOC includes a browser-based dashboard that displays backend API data in a refined dark-gray SOC-style interface with improved contrast, readable cards, accessible focus states, visible action buttons, and responsive filter toolbars.
 
 The updated dashboard theme includes:
 
 - Dark gray dashboard layout with improved contrast
 - Clearer summary cards
 - More readable system and metrics panels
-- Improved alert button visibility
-- Better hover states
+- Improved alert and export button visibility
+- Better hover and focus states
 - Searchable and filterable event sections
-- Event analytics charts
-- Active, resolved, and report-based alert workflow sections
+- Security event analytics charts
+- Active alert, incident, notification, report, and resolved-alert workflow sections
 - Network device visibility
 - Dashboard-triggered network scan controls
-
 
 ---
 
 ## Screenshots
 
-### Dashboard Main View
+### Dashboard Overview
 
-![ZeroSOC Dashboard Main View](screenshots/dashboard-main.png)
+![ZeroSOC Dashboard Overview](screenshots/dashboard-overview.png)
 
-The main dashboard view shows the updated ZeroSOC theme, header, API status indicator, refresh control, summary cards, system status panel, and backend metrics.
+The dashboard overview shows the updated ZeroSOC theme, header, local SOC overview label, API status indicator, refresh control, summary cards, system status panel, and backend metrics.
 
-### Event Summary and Active Alerts
+### Event Summary and Security Event Analytics
 
-![ZeroSOC Event Summary and Active Alerts](screenshots/dashboard-events-alerts.png)
+![ZeroSOC Event Summary and Security Event Analytics](screenshots/event-summary-analytics.png)
 
-The event summary and active alerts section shows total security events, severity counts, event type breakdowns, tag summaries, alert search controls, severity filters, and incident grouping.
+The event summary and analytics section shows total security events, severity counts, event type breakdowns, tag summaries, and dashboard charts for events by severity and event type.
 
-### Security Event Analytics
+### Alerts, Incidents, and Notifications
 
-![ZeroSOC Security Event Analytics](screenshots/security-event-analytics.png)
+![ZeroSOC Alerts, Incidents, and Notifications](screenshots/alerts-incidents-notifications.png)
 
-The security event analytics section visualizes stored events by severity and event type using dashboard charts.
+The alerts workflow section shows active alert filters, priority filters, SLA filters, alert search, CSV export controls, incident groups, incident activity, and alert notifications.
 
 ### Investigation Reports and Resolved Alerts
 
-![ZeroSOC Investigation Reports and Resolved Alerts](screenshots/dashboard-reports-alerts.png)
+![ZeroSOC Investigation Reports and Resolved Alerts](screenshots/reports-resolved-alerts.png)
 
-The investigation reports and resolved alerts section shows report filters, report activity tracking, export controls, resolved alert history, and reopen actions.
-
-### Network Devices
-
-![ZeroSOC Network Devices](screenshots/network-devices.png)
-
-The network devices section shows discovered local devices, device freshness, status visibility, and scan/export controls.
+The investigation and resolution section shows investigation report filters, report activity tracking, export controls, resolved alert history, SLA resolution details, and reopen actions.
 
 ### API Health Response
 
@@ -119,7 +112,6 @@ The health endpoint confirms that the ZeroSOC backend is running and returning s
 The events summary API response shows aggregated security event data returned from the backend.
 
 ---
-
 ## Tech Stack
 
 | Area | Technology |
