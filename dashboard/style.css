@@ -1,34 +1,34 @@
 :root {
-    color-scheme: light;
-    --page: #e3e8ef;
-    --page-soft: #dce3eb;
-    --surface: #eef3f9;
-    --surface-soft: #e4ebf3;
-    --surface-tint: #d8e1ec;
-    --border: #cfdae7;
-    --border-strong: #bcccdc;
-    --text: #172033;
-    --text-muted: #556274;
-    --text-subtle: #8695a8;
-    --primary: #2f6fed;
-    --primary-dark: #2457c5;
-    --primary-soft: #eaf2ff;
-    --success: #178c54;
-    --success-soft: #e9f8ef;
-    --warning: #b76b00;
-    --warning-soft: #fff7df;
-    --danger: #d03b3b;
-    --danger-soft: #fff0f0;
-    --info: #147bb8;
-    --info-soft: #eaf7ff;
-    --purple: #7958d8;
-    --purple-soft: #f2efff;
-    --shadow-xs: 0 1px 2px rgba(31, 41, 55, 0.08);
-    --shadow-sm: 0 8px 24px rgba(31, 41, 55, 0.1);
-    --shadow-md: 0 18px 45px rgba(31, 41, 55, 0.13);
-    --radius-sm: 10px;
-    --radius-md: 16px;
-    --radius-lg: 24px;
+    color-scheme: dark;
+
+    --page: #252b32;
+    --page-soft: #2f3740;
+
+    --surface: #343c45;
+    --surface-soft: #3d4650;
+    --surface-tint: #46515c;
+
+    --border: #5b6673;
+    --border-strong: #748091;
+
+    --text: #f4f7fb;
+    --text-muted: #c4ccd7;
+    --text-subtle: #9ea8b5;
+
+    --primary: #4f8cff;
+    --primary-dark: #2f6fe0;
+    --primary-soft: #dbe8ff;
+
+    --success: #22c55e;
+    --success-soft: #163f2a;
+
+    --danger: #ef4444;
+    --danger-soft: #4a1f25;
+
+    --warning: #f59e0b;
+    --warning-soft: #4a3514;
+
+    --shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
 }
 
 * {
@@ -45,7 +45,9 @@ body {
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background:
         radial-gradient(circle at 10% 0%, rgba(47, 111, 237, 0.08), transparent 26rem),
-        linear-gradient(180deg, #e9eef5 0, var(--page) 28rem);
+    background:
+        radial-gradient(circle at 10% 0%, rgba(47, 111, 237, 0.10), transparent 26em),
+        linear-gradient(180deg, #20262d 0, var(--page) 28em);
     color: var(--text);
 }
 
@@ -123,7 +125,7 @@ button:disabled {
     padding: 26px;
     border: 1px solid rgba(197, 211, 227, 0.98);
     border-radius: var(--radius-lg);
-    background: rgba(232, 239, 247, 0.95);
+    background: rgba(52, 60, 69, 0.96);
     box-shadow: var(--shadow-md);
     backdrop-filter: blur(14px);
 }
