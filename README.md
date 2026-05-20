@@ -56,11 +56,21 @@ ZeroSOC currently includes:
 
 ## Dashboard Preview
 
-ZeroSOC includes a browser-based dashboard that displays backend API data in a bright, professional SOC-style interface with accessible navigation, clean cards, readable tables, and responsive filter toolbars.
+ZeroSOC includes a browser-based dashboard that displays backend API data in a refreshed SOC-style interface with cleaner contrast, readable cards, accessible focus states, and responsive filter toolbars.
 
-![ZeroSOC Security Event Analytics](screenshots/security-event-analytics.png)
+The updated dashboard theme includes:
 
-The dashboard includes summary cards, system status, API metrics, security event summaries, event analytics charts, alert panels, incident groups, investigation report tracking, resolved alerts, and network device visibility.
+- Dark gray dashboard layout with improved contrast
+- Clearer summary cards
+- More readable system and metrics panels
+- Improved alert button visibility
+- Better hover states
+- Searchable and filterable event sections
+- Event analytics charts
+- Active, resolved, and report-based alert workflow sections
+- Network device visibility
+- Dashboard-triggered network scan controls
+
 
 ---
 
@@ -70,13 +80,13 @@ The dashboard includes summary cards, system status, API metrics, security event
 
 ![ZeroSOC Dashboard Main View](screenshots/dashboard-main.png)
 
-The main dashboard view shows the ZeroSOC header, API status indicator, summary cards, system status, and backend metrics.
+The main dashboard view shows the updated ZeroSOC theme, header, API status indicator, refresh control, summary cards, system status panel, and backend metrics.
 
 ### Event Summary and Active Alerts
 
 ![ZeroSOC Event Summary and Active Alerts](screenshots/dashboard-events-alerts.png)
 
-The event summary section displays total security events, severity breakdowns, event types, tags, and active alert controls.
+The event summary and active alerts section shows total security events, severity counts, event type breakdowns, tag summaries, alert search controls, severity filters, and incident grouping.
 
 ### Security Event Analytics
 
@@ -88,7 +98,13 @@ The security event analytics section visualizes stored events by severity and ev
 
 ![ZeroSOC Investigation Reports and Resolved Alerts](screenshots/dashboard-reports-alerts.png)
 
-The reports and resolved alerts section shows investigation report controls, report activity tracking, and resolved alert history.
+The investigation reports and resolved alerts section shows report filters, report activity tracking, export controls, resolved alert history, and reopen actions.
+
+### Network Devices
+
+![ZeroSOC Network Devices](screenshots/network-devices.png)
+
+The network devices section shows discovered local devices, device freshness, status visibility, and scan/export controls.
 
 ### API Health Response
 
