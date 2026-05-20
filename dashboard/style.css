@@ -1119,3 +1119,98 @@ table tbody tr:hover .severity-pill,
 .security-events-table tbody tr:hover .severity-pill {
     filter: brightness(1.12);
 }
+
+/* =========================
+   Badge + Eyebrow Contrast Fix
+   ========================= */
+
+/* Top "LOCAL SOC OVERVIEW" label */
+.eyebrow {
+    background: rgba(79, 140, 255, 0.20);
+    color: #b9d4ff;
+    border: 1px solid rgba(128, 170, 255, 0.65);
+    box-shadow: 0 0 0 1px rgba(79, 140, 255, 0.08);
+}
+
+/* General pills and badges */
+.status-label,
+.status-pill,
+.badge,
+.priority-pill {
+    border: 1px solid transparent;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+}
+
+/* Good / Online / Clear / Known */
+.summary-card.status-good .status-label,
+.badge-low,
+.low,
+.severity-low,
+.status-online,
+.online {
+    background: rgba(34, 197, 94, 0.22);
+    border-color: rgba(74, 222, 128, 0.55);
+    color: #86efac;
+}
+
+/* Warning / Medium / Errors */
+.summary-card.status-warning .status-label,
+.badge-medium,
+.medium,
+.severity-medium,
+.priority-medium {
+    background: rgba(245, 158, 11, 0.22);
+    border-color: rgba(251, 191, 36, 0.60);
+    color: #facc15;
+}
+
+/* Danger / High Risk / Offline */
+.summary-card.status-danger .status-label,
+.badge-high,
+.badge-critical,
+.high,
+.critical,
+.severity-high,
+.severity-critical,
+.priority-urgent,
+.priority-high,
+.status-offline,
+.offline {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: rgba(248, 113, 113, 0.62);
+    color: #fca5a5;
+}
+
+/* Neutral / None / Unknown */
+.summary-card.status-neutral .status-label,
+.badge-neutral,
+.neutral,
+.unknown {
+    background: rgba(148, 163, 184, 0.22);
+    border-color: rgba(203, 213, 225, 0.45);
+    color: #e2e8f0;
+}
+
+/* Make card labels readable */
+.summary-card h3 {
+    color: #f1f5f9;
+}
+
+/* Make card values readable */
+.summary-card p {
+    color: #ffffff;
+}
+
+/* Button polish */
+button {
+    background: #4f8cff;
+    border-color: #7aa7ff;
+    color: #ffffff;
+}
+
+button:hover {
+    background: #2f6fe0;
+    border-color: #9bbcff;
+    color: #ffffff;
+}
