@@ -366,15 +366,15 @@ function renderSeverityChart(severityCounts) {
             maintainAspectRatio: false,
             cutout: "55%",
             plugins: {
-                legend: {
-                    position: "top",
-            labels: {
-                color: "#667085",
-                boxWidth: 16,
-                padding: 12
-            }
-                }
-            }
+    legend: {
+        position: "top",
+        labels: {
+            color: "#667085",
+            boxWidth: 16,
+            padding: 12
+        }
+    }
+}
         }
     });
 }
