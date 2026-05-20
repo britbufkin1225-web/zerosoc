@@ -429,7 +429,7 @@ tr:last-child td {
 }
 
 tr:hover td {
-    background: #edf4ff;
+    background: #1f2933;
 }
 
 .badge,
@@ -920,4 +920,202 @@ tr:hover td {
     .segmented-control {
         border-radius: var(--radius-md);
     }
+}
+
+/* =========================
+   Contrast Fix Pass
+   ========================= */
+
+.dashboard-header,
+.summary-card,
+.panel,
+.card,
+.section-card {
+    background: rgba(42, 49, 57, 0.98);
+    border: 1px solid rgba(120, 132, 148, 0.75);
+}
+
+.dashboard-header p,
+.hero-copy p,
+.panel p,
+.card p,
+.summary-card p {
+    color: #d7dde6;
+}
+
+.panel h2,
+.panel h3,
+.card h2,
+.card h3,
+.section-title,
+.summary-card h3 {
+    color: #ffffff;
+}
+
+.metric-row,
+.status-row,
+.detail-row,
+.data-row {
+    border-bottom: 1px solid rgba(140, 150, 165, 0.35);
+}
+
+.metric-row span:first-child,
+.status-row span:first-child,
+.detail-row span:first-child,
+.data-row span:first-child {
+    color: #d2d9e3;
+    font-weight: 700;
+}
+
+.metric-row span:last-child,
+.status-row span:last-child,
+.detail-row span:last-child,
+.data-row span:last-child {
+    color: #ffffff;
+    font-weight: 800;
+}
+
+.summary-card .card-label,
+.summary-card small,
+.card-label,
+.eyebrow {
+    color: #c6ced9;
+    letter-spacing: 0.08em;
+}
+
+.summary-card .card-value,
+.summary-value,
+.metric-value {
+    color: #ffffff;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.35);
+}
+
+/* =========================
+   Tables + Security Events Final Contrast
+   ========================= */
+
+.table-wrap,
+.table-wrapper,
+.section-scroll,
+.events-section,
+.security-events,
+.events-table-wrapper,
+.table-card {
+    background: rgba(42, 49, 57, 0.98);
+    border: 1px solid rgba(130, 143, 160, 0.75);
+}
+
+/* Base table */
+table,
+.events-table,
+.security-events-table {
+    width: 100%;
+    border-collapse: collapse;
+    color: #eef3f8;
+}
+
+/* Header row */
+table thead,
+.events-table thead,
+.security-events-table thead {
+    background: #37414c;
+}
+
+table thead th,
+.events-table thead th,
+.security-events-table thead th {
+    color: #f8fafc;
+    background: #37414c;
+    border-bottom: 1px solid rgba(150, 163, 184, 0.55);
+    font-weight: 900;
+}
+
+/* Normal rows */
+table tbody tr,
+.events-table tbody tr,
+.security-events-table tbody tr {
+    background: #303943;
+}
+
+table tbody tr:nth-child(even),
+.events-table tbody tr:nth-child(even),
+.security-events-table tbody tr:nth-child(even) {
+    background: #35404b;
+}
+
+/* Normal cells */
+table tbody td,
+.events-table tbody td,
+.security-events-table tbody td {
+    color: #e8eef6;
+    background: transparent;
+    border-bottom: 1px solid rgba(150, 163, 184, 0.35);
+    font-weight: 650;
+}
+
+/* Softer ID column */
+table tbody td:first-child,
+.events-table tbody td:first-child,
+.security-events-table tbody td:first-child {
+    color: #cfd8e3;
+}
+
+/* Tag column */
+table tbody td:nth-child(4),
+.events-table tbody td:nth-child(4),
+.security-events-table tbody td:nth-child(4) {
+    color: #d8e0ea;
+}
+
+/* Timestamp column */
+table tbody td:last-child,
+.events-table tbody td:last-child,
+.security-events-table tbody td:last-child {
+    color: #dde5ef;
+}
+
+/* Hover row — final override */
+table tbody tr:hover,
+.events-table tbody tr:hover,
+.security-events-table tbody tr:hover,
+.security-events table tbody tr:hover {
+    background: #1f2933 !important;
+}
+
+/* Hover cells — this kills the old light hover */
+table tbody tr:hover td,
+.events-table tbody tr:hover td,
+.security-events-table tbody tr:hover td,
+.security-events table tbody tr:hover td {
+    color: #ffffff !important;
+    background: #1f2933 !important;
+}
+
+/* Hover tag/message/timestamp readability */
+table tbody tr:hover td:nth-child(4),
+table tbody tr:hover td:nth-child(5),
+table tbody tr:hover td:last-child,
+.events-table tbody tr:hover td:nth-child(4),
+.events-table tbody tr:hover td:nth-child(5),
+.events-table tbody tr:hover td:last-child,
+.security-events-table tbody tr:hover td:nth-child(4),
+.security-events-table tbody tr:hover td:nth-child(5),
+.security-events-table tbody tr:hover td:last-child {
+    color: #f1f5f9 !important;
+}
+
+/* Keep severity pills visible on hover */
+table tbody tr:hover .badge,
+table tbody tr:hover .status-pill,
+table tbody tr:hover .priority-pill,
+table tbody tr:hover .severity-pill,
+.events-table tbody tr:hover .badge,
+.events-table tbody tr:hover .status-pill,
+.events-table tbody tr:hover .priority-pill,
+.events-table tbody tr:hover .severity-pill,
+.security-events-table tbody tr:hover .badge,
+.security-events-table tbody tr:hover .status-pill,
+.security-events-table tbody tr:hover .priority-pill,
+.security-events-table tbody tr:hover .severity-pill {
+    filter: brightness(1.12);
 }
