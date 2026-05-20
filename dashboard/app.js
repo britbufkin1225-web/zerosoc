@@ -1690,26 +1690,28 @@ function bindSegmentedFilter(container, selector, activeClass, onSelect) {
     });
 }
 
-alertSeverityFilters.addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-alert-severity]");
+if (alertSeverityFilters) {
+    alertSeverityFilters.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-alert-severity]");
 
-    if (!button) {
-        return;
-    }
+        if (!button) {
+            return;
+        }
 
-    activeAlertSeverity = button.dataset.alertSeverity || "all";
+        activeAlertSeverity = button.dataset.alertSeverity || "all";
 
-    alertSeverityFilters
-        .querySelectorAll("[data-alert-severity]")
-        .forEach(filterButton => {
-            filterButton.classList.toggle(
-                "active",
-                filterButton.dataset.alertSeverity === activeAlertSeverity
-            );
-        });
+        alertSeverityFilters
+            .querySelectorAll("[data-alert-severity]")
+            .forEach(filterButton => {
+                filterButton.classList.toggle(
+                    "active",
+                    filterButton.dataset.alertSeverity === activeAlertSeverity
+                );
+            });
 
-    await loadDashboard();
-});
+        await loadDashboard();
+    });
+}
 
 bindSegmentedFilter(alertPriorityFilters, "[data-alert-priority]", "alertPriority", (button) => {
     activeAlertPriority = button.dataset.alertPriority || "all";
@@ -1719,10 +1721,12 @@ bindSegmentedFilter(alertSlaFilters, "[data-alert-sla]", "alertSla", (button) =>
     activeAlertSla = button.dataset.alertSla || "all";
 });
 
-alertSearchInput.addEventListener("input", async () => {
-    activeAlertSearch = alertSearchInput.value.trim();
-    await loadDashboard();
-});
+if (alertSearchInput) {
+    alertSearchInput.addEventListener("input", async () => {
+        activeAlertSearch = alertSearchInput.value.trim();
+        await loadDashboard();
+    });
+}
 
 exportAlertsButton.addEventListener("click", async () => {
     exportAlertsButton.disabled = true;
@@ -1739,34 +1743,40 @@ exportAlertsButton.addEventListener("click", async () => {
     }
 });
 
-exportIncidentsButton.addEventListener("click", async () => {
-    exportIncidentsButton.disabled = true;
-    exportIncidentsButton.textContent = "Exporting...";
+if (exportIncidentsButton) {
+    exportIncidentsButton.addEventListener("click", async () => {
+        exportIncidentsButton.disabled = true;
+        exportIncidentsButton.textContent = "Exporting...";
 
-    try {
-        await exportIncidentsCsv();
-        setApiStatus("status-good", "Incidents exported");
-    } catch (error) {
-        setApiStatus("status-danger", error.message);
-    } finally {
-        exportIncidentsButton.disabled = false;
-        exportIncidentsButton.textContent = "Export Incidents";
-    }
-});
+        try {
+            await exportIncidentsCsv();
+            setApiStatus("status-good", "Incidents exported");
+        } catch (error) {
+            setApiStatus("status-danger", error.message);
+        } finally {
+            exportIncidentsButton.disabled = false;
+            exportIncidentsButton.textContent = "Export Incidents";
+        }
+    });
+}
 
-incidentOwnerFilter.addEventListener("input", async () => {
-    activeIncidentOwner = incidentOwnerFilter.value.trim();
-    await loadDashboard();
-});
+if (incidentOwnerFilter) {
+    incidentOwnerFilter.addEventListener("input", async () => {
+        activeIncidentOwner = incidentOwnerFilter.value.trim();
+        await loadDashboard();
+    });
+}
+if (incidentStatusFilter) {
+    incidentStatusFilter.addEventListener("change", async () => {
+        activeIncidentStatus = incidentStatusFilter.value;
+        await loadDashboard();
+    });
+}
 
-incidentStatusFilter.addEventListener("change", async () => {
-    activeIncidentStatus = incidentStatusFilter.value;
-    await loadDashboard();
-});
-
-exportIncidentActivityButton.addEventListener("click", async () => {
-    exportIncidentActivityButton.disabled = true;
-    exportIncidentActivityButton.textContent = "Exporting...";
+if (exportIncidentActivityButton) {
+    exportIncidentActivityButton.addEventListener("click", async () => {
+        exportIncidentActivityButton.disabled = true;
+        exportIncidentActivityButton.textContent = "Exporting...";
 
     try {
         await exportIncidentActivity();
