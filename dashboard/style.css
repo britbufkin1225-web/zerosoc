@@ -121,10 +121,10 @@ button:disabled {
     max-width: 1500px;
     margin: 18px auto 0;
     padding: 26px;
-    border: 1px solid rgba(229, 237, 246, 0.95);
+    border: 1px solid rgba(91, 102, 115, 0.95);
     border-radius: var(--radius-lg);
-    background: rgba(255, 255, 255, 0.92);
-    box-shadow: var(--shadow-md);
+    background: rgba(52, 60, 69, 0.96);
+    box-shadow: var(--shadow);
     backdrop-filter: blur(14px);
 }
 
