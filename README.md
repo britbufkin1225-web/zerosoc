@@ -4,6 +4,7 @@ ZeroSOC is a lightweight cybersecurity monitoring dashboard built with Python, S
 
 The project is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W, while also being easy to develop and test on a Windows machine.
 
+**Status:** Active portfolio project — backend functional, dashboard implemented, screenshots updated, Raspberry Pi deployment pending.
 ---
 
 ## Project Overview
@@ -41,6 +42,22 @@ ZeroSOC currently includes:
 - Web dashboard using HTML, CSS, JavaScript, and Chart.js
 
 ---
+## What This Demonstrates
+
+ZeroSOC demonstrates practical cybersecurity and backend development skills through a working local SOC-style monitoring dashboard.
+
+Key demonstrated skills include:
+
+- Backend API design using Python
+- API key authentication for protected routes
+- SQLite database storage for security events and network devices
+- Request logging and request ID tracking
+- Security event classification and auto-tagging
+- Alert workflow design with SLA and priority tracking
+- Incident grouping and investigation report workflows
+- Local network scanning and unknown-device detection
+- Frontend dashboard development using HTML, CSS, JavaScript, and Chart.js
+- GitHub documentation with screenshots, endpoint references, and test checklists
 
 ## Dashboard Preview
 
@@ -738,7 +755,6 @@ screenshots/
   reports-resolved-alerts.png
   events-devices.png
   api-health.png
-  events-summary.png
 
 data/
   zerosoc.db
