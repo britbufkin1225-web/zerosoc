@@ -32,3 +32,17 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+__pycache__/
+*.pyc
+
+.env
+
+logs/*.log
+server.err.log
+server.out.log
+
+.snapshots/
+
+data/*.db
+data/*.db-journal
