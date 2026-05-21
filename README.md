@@ -526,6 +526,17 @@ After starting the backend and dashboard server, verify:
 - Export Devices button downloads CSV
 - Run Scan button starts a network scan without breaking the dashboard
 
+## Project Documentation
+
+Additional project documentation is available in the `docs/` folder.
+
+| Document | Purpose |
+|---|---|
+| [`backend-api-test-checklist.md`](docs/backend-api-test-checklist.md) | Checklist for testing backend API endpoints |
+| [`dashboard-smoke-test-checklist.md`](docs/dashboard-smoke-test-checklist.md) | Checklist for testing dashboard functionality |
+| [`screenshots-inventory.md`](docs/screenshots-inventory.md) | Tracks README screenshot files and screenshot status |
+| [`known-limitations-and-next-upgrades.md`](docs/known-limitations-and-next-upgrades.md) | Tracks current limitations and future upgrade ideas |
+
 ---
 
 ## Project Timeline
