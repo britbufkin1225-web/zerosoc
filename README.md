@@ -109,12 +109,6 @@ The event and device sections show searchable security events, time-range filter
 
 The health endpoint confirms that the ZeroSOC backend is running and returning structured API responses.
 
-### Events Summary API Response
-
-![ZeroSOC Events Summary API Response](screenshots/events-summary.png)
-
-The events summary API response shows aggregated security event data returned from the backend.
-
 ---
 
 ## Tech Stack
