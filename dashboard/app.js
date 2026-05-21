@@ -2178,4 +2178,4 @@ async function handleAlertActionClick(event) {
 alertsPanel.addEventListener("click", handleAlertActionClick);
 resolvedAlertsPanel.addEventListener("click", handleAlertActionClick);
 
-loadDashboard();
+loadDashboard();}
