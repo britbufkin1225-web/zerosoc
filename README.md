@@ -101,6 +101,39 @@ The dashboard includes:
 - Device freshness summaries
 - Dashboard-triggered network scans
 
+## Architecture Overview
+
+ZeroSOC uses a lightweight local architecture designed for home-lab monitoring and portfolio demonstration.
+
+The system includes a Python backend API, SQLite database storage, local request logging, network scanning logic, and a browser-based dashboard frontend. The dashboard communicates with the backend API to display system status, security events, alerts, incidents, investigation reports, notifications, and network device data.
+
+```text
+Browser Dashboard
+HTML / CSS / JavaScript / Chart.js
+        |
+        | HTTP API Requests
+        v
+Python Backend API
+http.server / BaseHTTPRequestHandler
+        |
+        | Reads and writes data
+        v
+SQLite Database
+Security Events / Alerts / Incidents / Reports / Devices
+        |
+        | Local runtime files
+        v
+Logs and Exports
+Request Logs / CSV Exports / JSON Report Bundles
+
+Local System + Network
+System Health / Metrics / Network Scan / ARP Data
+        |
+        v
+SOC Logic
+Auto-Tagging / Alert Creation / Unknown Device Detection
+```
+
 ---
 
 ## Screenshots
@@ -571,120 +604,82 @@ Additional project documentation is available in the `docs/` folder. These files
 
 The foundation phase established the initial project repository, file structure, and baseline documentation needed to begin building ZeroSOC as a portfolio-ready cybersecurity/backend project.
 
-- [x] Create GitHub repository
-- [x] Add initial project folder structure
-- [x] Add main backend entry point with `run.py`
-- [x] Add dependency tracking with `requirements.txt`
-- [x] Add environment variable example file with `.env.example`
-- [x] Add ignored local/runtime files with `.gitignore`
-- [x] Add initial README documentation
+#### Completed Work
+
+- [x] Created GitHub repository
+- [x] Added initial project folder structure
+- [x] Added main backend entry point with `run.py`
+- [x] Added dependency tracking with `requirements.txt`
+- [x] Added environment variable example file with `.env.example`
+- [x] Added ignored local/runtime files with `.gitignore`
+- [x] Added initial README documentation
+
+---
 
 ### Phase 2: Core Backend API
 
 Phase 2 focused on building the main backend API layer for ZeroSOC. This phase established the server structure, protected API routes, request handling, response formatting, and backend endpoints used by the dashboard.
 
-The goal of this phase was to create a stable backend foundation that could collect system data, expose security information, support frontend dashboard requests, and prepare the project for future SOC-style features.
+The goal of this phase was to create a stable backend foundation that could collect system data, expose security information, support frontend dashboard requests, and prepare the project for SOC-style features.
 
-### Completed Work
+#### Completed Work
 
-- Built the Python backend server
-- Created versioned API routes under `/api/v1`
-- Added centralized GET route handling
-- Added centralized POST route handling
-- Added API key authentication for protected endpoints
-- Added consistent JSON response formatting
-- Added request IDs to backend responses
-- Added structured request logging
-- Created system health and status endpoints
-- Created backend metrics endpoint
-- Created security event endpoints
-- Added event creation through POST requests
-- Added security event summary reporting
-- Added network device endpoints
-- Added local network scan endpoint
+- [x] Built the Python backend server
+- [x] Created versioned API routes under `/api/v1`
+- [x] Added centralized GET route handling
+- [x] Added centralized POST route handling
+- [x] Added API key authentication for protected endpoints
+- [x] Added consistent JSON response formatting
+- [x] Added request IDs to backend responses
+- [x] Added structured request logging
+- [x] Created system health and status endpoints
+- [x] Created backend metrics endpoint
+- [x] Created security event endpoints
+- [x] Added event creation through POST requests
+- [x] Added security event summary reporting
+- [x] Added network device endpoints
+- [x] Added local network scan endpoint
 
-### Core API Features
+#### Core API Features
 
 | Feature | Description |
 |---|---|
 | API Versioning | Routes are organized under `/api/v1` |
 | API Key Authentication | Protected endpoints require the `X-API-Key` header |
-| Centralized Routing | GET and POST requests are handled through clean route logic |
+| Centralized Routing | GET and POST requests are handled through cleaner route logic |
 | JSON Responses | API responses follow a consistent JSON structure |
-| Request Logging | Backend requests are logged with method, endpoint, status, and request ID |
-| Security Events | Events can be stored, retrieved, filtered, and summarized |
+| Request Logging | Backend requests are logged with method, endpoint, status, latency, and request ID |
 | System Monitoring | Backend exposes system health, status, and metrics |
 | Network Visibility | Backend can scan and store local network device information |
 
-### Important API Endpoints
+---
 
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| GET | `/health` | Basic service health check | No |
-| GET | `/api/v1/health` | Versioned health check | No |
-| GET | `/api/v1/status` | Service status information | No |
-| GET | `/api/v1/system` | System information | Yes |
-| GET | `/api/v1/metrics` | Backend metrics | Yes |
-| GET | `/api/v1/logs` | Request logs | Yes |
-| GET | `/api/v1/logs/recent` | Recent request logs | Yes |
-| GET | `/api/v1/events` | List security events | Yes |
-| GET | `/api/v1/events/summary` | Security event summary | Yes |
-| POST | `/api/v1/events` | Create a new security event | Yes |
-| GET | `/api/v1/devices` | List known network devices | Yes |
-| GET | `/api/v1/network/scan` | Run local network scan | Yes |
+### Phase 3: Security Events and SOC Logic
 
-### Portfolio Value
-
-This phase demonstrates backend development fundamentals including API design, authentication, structured routing, logging, JSON response formatting, data retrieval, and endpoint organization. It also shows that ZeroSOC is more than a static dashboard because the frontend is powered by real backend API data.
-
-
-## Phase 3: Security Events and SOC Logic
-
-Phase 3 focused on turning ZeroSOC from a basic backend API into a small SOC-style monitoring system. This phase introduced security event storage, event classification, severity tracking, event summaries, and logic for detecting notable activity on the local network.
+Phase 3 focused on turning ZeroSOC from a basic backend API into a small SOC-style monitoring system. This phase introduced security event storage, event classification, severity tracking, event summaries, and logic for detecting notable activity.
 
 The goal of this phase was to create a structured way for ZeroSOC to record security-related activity, organize events by severity and type, and prepare the dashboard to display useful SOC-style information.
 
-### Completed Work
+#### Completed Work
 
-- Added SQLite storage for security events
-- Created a structured security event model
-- Added support for creating security events through the API
-- Added event IDs using UUIDs
-- Added timestamps for each event
-- Added event severity levels
-- Added event type classification
-- Added event source IP tracking
-- Added event message storage
-- Added automatic event tagging
-- Added event summary reporting
-- Added severity count summaries
-- Added event type summaries
-- Added tag summaries
-- Added unknown device event creation
-- Connected network scan results to SOC event generation
+- [x] Added SQLite storage for security events
+- [x] Created a structured security event model
+- [x] Added support for creating security events through the API
+- [x] Added event IDs using UUIDs
+- [x] Added timestamps for each event
+- [x] Added event severity levels
+- [x] Added event type classification
+- [x] Added event source IP tracking
+- [x] Added event message storage
+- [x] Added automatic event tagging
+- [x] Added event summary reporting
+- [x] Added severity count summaries
+- [x] Added event type summaries
+- [x] Added tag summaries
+- [x] Added time-window filtering for event review
+- [x] Connected network scan results to SOC event generation
 
-### Security Event Fields
-
-| Field | Description |
-|---|---|
-| `id` | Unique event identifier |
-| `timestamp` | Time the event was created |
-| `source_ip` | IP address related to the event |
-| `event_type` | Category of security event |
-| `severity` | Event severity level |
-| `message` | Human-readable event description |
-| `tag` | Auto-generated classification label |
-
-### Severity Levels
-
-| Severity | Purpose |
-|---|---|
-| `critical` | High-impact event requiring immediate attention |
-| `high` | Serious event that should be reviewed quickly |
-| `medium` | Notable event that may require investigation |
-| `low` | Informational or lower-risk event |
-
-### SOC Logic Features
+#### SOC Logic Features
 
 | Feature | Description |
 |---|---|
@@ -692,231 +687,145 @@ The goal of this phase was to create a structured way for ZeroSOC to record secu
 | Event Creation | Events can be created through backend logic or API requests |
 | Auto-Tagging | Events are automatically labeled based on severity, type, and message content |
 | Event Summaries | Events are grouped by severity, type, source IP, and tag |
-| Unknown Device Detection | New network devices can automatically generate medium-severity events |
-| Dashboard Support | Event data is structured so the frontend can display alerts, counts, and summaries |
+| Time Filtering | Events can be reviewed by time window |
+| Dashboard Support | Event data is structured so the frontend can display counts, alerts, and analytics |
 
-### Example Event Types
+---
 
-- `auth`
-- `network`
-- `scan`
-- `system`
-- `unknown-device`
-- `firewall`
-- `malware-related`
-- `ssh`
-- `storage`
-- `hardware-health`
+### Phase 4: Alerts, Incidents, Reports, and Notifications
 
-### Portfolio Value
+Phase 4 focused on expanding ZeroSOC from event tracking into a more complete SOC-style workflow. This phase added alert handling, incident grouping, investigation reports, notification tracking, SLA states, and exportable investigation data.
 
-This phase demonstrates practical cybersecurity backend logic. ZeroSOC does not only store raw data; it classifies security events, tracks severity, summarizes activity, and creates SOC-style signals from local network behavior.
+The goal of this phase was to make ZeroSOC feel less like a raw event database and more like a lightweight security operations workflow tool.
 
-This makes the project more relevant for cybersecurity, backend development, and entry-level SOC analyst portfolio review.
+#### Completed Work
 
-## Phase 4: Network Device Scanning
+- [x] Added automatic alert creation from notable events
+- [x] Added active and resolved alert tracking
+- [x] Added alert acknowledgement workflow
+- [x] Added alert status updates
+- [x] Added alert priority scoring
+- [x] Added SLA tracking
+- [x] Added overdue and due-soon SLA states
+- [x] Added priority and SLA filtering
+- [x] Added incident grouping
+- [x] Added incident owner tracking
+- [x] Added incident notes
+- [x] Added incident activity tracking
+- [x] Added investigation report creation
+- [x] Added report editing
+- [x] Added report status updates
+- [x] Added report print view
+- [x] Added report JSON export
+- [x] Added report archive and restore
+- [x] Added report activity tracking
+- [x] Added alert notification logging
+- [x] Added optional webhook notification support
+- [x] Added CSV exports for alerts, incidents, reports, and activity logs
 
-Phase 4 focused on adding local network visibility to ZeroSOC. This phase introduced logic for detecting devices on the local network, collecting basic device information, storing discovered devices, and creating SOC-style events when new or unknown devices appear.
+#### SOC Workflow Features
+
+| Feature | Description |
+|---|---|
+| Alerts | Surfaces review-worthy security events |
+| Alert Status | Tracks active, acknowledged, and resolved alerts |
+| SLA Tracking | Marks alerts as on-track, due-soon, overdue, or resolved |
+| Incident Groups | Groups related alerts by source and event type |
+| Investigation Reports | Creates lightweight reports tied to alerts |
+| Notifications | Tracks local and optional webhook alert notifications |
+| Exports | Supports CSV and JSON exports for review and handoff |
+
+---
+
+### Phase 5: Network Device Scanning
+
+Phase 5 focused on adding local network visibility to ZeroSOC. This phase introduced logic for detecting devices on the local network, collecting basic device information, storing discovered devices, and creating SOC-style events when new or unknown devices appear.
 
 The goal of this phase was to connect the backend API to real local network activity so ZeroSOC could provide lightweight network awareness in a home-lab environment.
 
-### Completed Work
+#### Completed Work
 
-- Added local IP address detection
-- Added local `/24` network range calculation
-- Added host scanning logic
-- Added ping-based device checks
-- Added hostname lookup for discovered devices
-- Added ARP table parsing
-- Added MAC address detection when available
-- Added SQLite storage for network devices
-- Added first-seen and last-seen tracking
-- Added known device listing endpoint
-- Added network scan endpoint
-- Added unknown device detection
-- Connected new device discovery to security event creation
+- [x] Added local IP address detection
+- [x] Added local `/24` network range calculation
+- [x] Added host scanning logic
+- [x] Added ping-based device checks
+- [x] Added hostname lookup for discovered devices
+- [x] Added ARP table parsing
+- [x] Added MAC address detection when available
+- [x] Added SQLite storage for network devices
+- [x] Added first-seen and last-seen tracking
+- [x] Added known device listing endpoint
+- [x] Added network scan endpoint
+- [x] Added unknown device detection
+- [x] Added device search and status filtering
+- [x] Added stale device visibility
+- [x] Added device CSV export
+- [x] Connected new device discovery to security event creation
 
-### Network Device Fields
+#### Network Device Fields
 
 | Field | Description |
 |---|---|
 | `id` | Internal device record ID |
 | `ip_address` | Device IP address |
 | `hostname` | Detected hostname, when available |
-| `status` | Device status, such as online |
+| `status` | Device status, such as online or stale |
 | `mac_address` | MAC address from ARP data, when available |
 | `first_seen` | First time the device was detected |
 | `last_seen` | Most recent time the device was detected |
 
-### Network Scanning Features
+---
 
-| Feature | Description |
-|---|---|
-| Local IP Detection | Determines the machine’s active local network IP |
-| Network Range Calculation | Builds a `/24` network range from the local IP |
-| Ping Scanning | Checks local hosts for reachability |
-| Hostname Lookup | Attempts to resolve hostnames for detected devices |
-| ARP Table Parsing | Reads local ARP data to identify MAC addresses |
-| Device Persistence | Stores discovered devices in SQLite |
-| Device Updates | Updates `last_seen` when known devices are seen again |
-| Unknown Device Events | Creates security events when new devices are discovered |
+### Phase 6: Dashboard Frontend
 
-### API Endpoint
-
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| GET | `/api/v1/network/scan` | Scans the local network and stores discovered devices | Yes |
-| GET | `/api/v1/devices` | Lists known network devices | Yes |
-
-### SOC Value
-
-Network scanning gives ZeroSOC visibility beyond the local machine. By detecting devices on the network and recording when they first appear, the system can identify new or unexpected devices that may require review.
-
-This is important because unknown devices are one of the simplest but most useful signals in a small home-lab SOC environment.
-
-### Portfolio Value
-
-This phase demonstrates practical backend integration with operating system tools, local networking, SQLite persistence, and security event generation.
-
-It shows that ZeroSOC can collect real local network data, process it, store it, and turn it into SOC-style findings instead of simply displaying static information.
-
-## Phase 5: Dashboard Frontend
-
-Phase 5 focused on building the browser-based dashboard for ZeroSOC. This phase turned the backend API data into a visual interface that can display system status, backend metrics, security events, alerts, incidents, reports, and network device information.
+Phase 6 focused on building the browser-based dashboard for ZeroSOC. This phase turned backend API data into a visual interface that displays system status, backend metrics, security events, alerts, incidents, reports, notifications, resolved alerts, and network device information.
 
 The goal of this phase was to make ZeroSOC easier to demonstrate as a cybersecurity/backend portfolio project by giving the API a clean visual layer.
 
-### Completed Work
+#### Completed Work
 
-- Built a simple web dashboard frontend
-- Connected dashboard panels to backend API endpoints
-- Added API status indicator
-- Added refresh control
-- Added top summary cards
-- Added system status panel
-- Added backend metrics panel
-- Added security event summary section
-- Added severity and event type analytics
-- Added active alerts section
-- Added incident grouping display
-- Added investigation reports section
-- Added resolved alerts section
-- Added security event table
-- Added network device inventory section
-- Added export-style dashboard controls
-- Updated dashboard theme to a gray, higher-contrast visual style
-- Captured dashboard screenshots for the README
+- [x] Built the dashboard frontend
+- [x] Connected dashboard panels to backend API endpoints
+- [x] Added API status indicator
+- [x] Added refresh control
+- [x] Added summary cards
+- [x] Added system health panel
+- [x] Added backend metrics panel
+- [x] Added event summary section
+- [x] Added security event analytics charts
+- [x] Added active alerts section
+- [x] Added incident workflow panels
+- [x] Added notification panel
+- [x] Added investigation reports panel
+- [x] Added report activity panel
+- [x] Added resolved alerts panel
+- [x] Added security events table
+- [x] Added network devices panel
+- [x] Added dashboard export controls
+- [x] Added dashboard-triggered network scan
+- [x] Improved dashboard styling and readability
+- [x] Added safer frontend event bindings
+- [x] Captured dashboard screenshots for the README
 
-### Dashboard Sections
+#### Dashboard Sections
 
 | Section | Purpose |
 |---|---|
-| Dashboard Overview | Shows the main ZeroSOC dashboard header, API status, summary cards, system status, and metrics |
-| Event Summary and Analytics | Displays security event counts, severity breakdowns, and event type summaries |
-| Alerts and Incidents | Shows active alerts, grouped incidents, alert filters, and notification-style activity |
-| Investigation Reports | Displays investigation workflow data, reports, report filters, and report activity |
+| Dashboard Overview | Shows the main dashboard header, API status, summary cards, system status, and metrics |
+| Event Summary and Analytics | Displays event counts, severity breakdowns, and event type summaries |
+| Alerts and Incidents | Shows active alert filters, grouped incidents, alert activity, and notifications |
+| Investigation Reports | Displays investigation workflow data, report filters, and report activity |
 | Resolved Alerts | Shows resolved alert history, SLA-style details, and reopen actions |
 | Security Events | Displays searchable and filterable security event records |
 | Network Devices | Shows discovered devices, scan controls, and network inventory information |
 
-### Dashboard Features
-
-| Feature | Description |
-|---|---|
-| API Status Indicator | Shows whether the backend API is reachable |
-| Refresh Control | Allows dashboard data to be reloaded from the backend |
-| Summary Cards | Highlights important system, event, alert, and network counts |
-| System Status Panel | Displays local system health information |
-| Backend Metrics Panel | Shows backend activity and request-related metrics |
-| Event Analytics | Summarizes security events by severity, type, and tag |
-| Alert Filters | Allows alerts to be viewed by severity, priority, or status |
-| Investigation Workflow | Displays reports and review activity |
-| Device Inventory | Lists discovered local network devices |
-| Screenshot Support | README screenshots document the final dashboard appearance |
-
-### Visual Theme
-
-The dashboard uses a gray-toned interface with stronger contrast than the earlier light theme. This makes the dashboard easier to read while still keeping a clean, professional appearance.
-
-The updated visual style better matches the cybersecurity focus of the project and makes the dashboard more suitable for portfolio screenshots.
-
-### Portfolio Value
-
-This phase makes ZeroSOC demonstrable. Instead of only showing backend code or API responses, the project now has a visual interface that presents SOC-style information in a way that is easier for reviewers, clients, or hiring managers to understand.
-
-The dashboard shows that ZeroSOC combines backend API development, frontend integration, security event logic, local network visibility, and dashboard presentation in one project.
-
-### Phase 6: README, Screenshots, and Portfolio Polish
-
-Phase 6 focused on preparing ZeroSOC for GitHub presentation and portfolio review. This phase cleaned up the README structure, updated the project documentation, aligned screenshots with the current dashboard theme, and organized the project into clear development phases.
-
-The goal of this phase was to make the project easy to understand for reviewers, hiring managers, clients, or anyone viewing the repository for the first time.
-
-### Completed Work
-
-- Updated the README project summary
-- Added clear project goals
-- Added project phase breakdowns
-- Updated the current status section
-- Added core backend API details
-- Added security event and SOC logic details
-- Added network scanning documentation
-- Added dashboard frontend documentation
-- Added API endpoint table
-- Added dashboard screenshot section
-- Updated screenshot descriptions to match the new dashboard theme
-- Organized screenshots by dashboard section
-- Added portfolio-focused project value sections
-- Cleaned up language for a more professional GitHub presentation
-
-### README Sections
-
-| Section | Purpose |
-|---|---|
-| Project Overview | Explains what ZeroSOC is and why it exists |
-| Project Goals | Lists the main technical and cybersecurity goals |
-| Current Status | Summarizes what currently works |
-| Project Phases | Shows how the project was built step by step |
-| API Endpoints | Documents available backend routes |
-| Dashboard Screenshots | Shows the visual dashboard interface |
-| Tech Stack | Lists the tools and technologies used |
-| Portfolio Value | Explains what the project demonstrates professionally |
-| Future Improvements | Shows planned next steps |
-
-### Screenshot Categories
-
-| Screenshot | Purpose |
-|---|---|
-| Dashboard Overview | Shows the main dashboard header, API status, summary cards, system status, and metrics |
-| Security Event Analytics | Shows event counts, severity summaries, and event type analytics |
-| Alerts and Incidents | Shows active alert filters, incident groups, and notification-style activity |
-| Investigation Reports | Shows report workflow, investigation tracking, and resolved alert data |
-| Security Events and Devices | Shows searchable event records and local network device inventory |
-
-### Portfolio Polish Checklist
-
-- README explains the project clearly
-- Screenshots match the current dashboard design
-- API endpoints are documented
-- Project phases show steady development progress
-- Cybersecurity value is easy to understand
-- Backend value is easy to understand
-- Dashboard value is easy to understand
-- GitHub repository is organized and readable
-- Screenshots are stored in the `screenshots/` folder
-- Markdown image paths use correct file names
-- Final commits are clean and descriptive
-
-### Portfolio Value
-
-This phase makes ZeroSOC easier to evaluate as a finished portfolio project. The documentation explains the project’s purpose, the screenshots show the working dashboard, and the phase breakdown demonstrates the development process from backend foundation to SOC-style dashboard.
-
-A clean README matters because reviewers often judge the project before they ever run the code. Cruel, but accurate.
 ---
 
 ### Phase 7: README, Screenshots, and Portfolio Polish
 
 Phase 7 focused on preparing ZeroSOC for GitHub presentation and portfolio review. This phase cleaned up the README structure, updated project documentation, aligned screenshots with the current dashboard theme, and organized the project into clear development phases.
+
+The goal of this phase was to make the project easy to understand for reviewers, hiring managers, clients, or anyone viewing the repository for the first time.
 
 #### Completed Work
 
@@ -930,7 +839,8 @@ Phase 7 focused on preparing ZeroSOC for GitHub presentation and portfolio revie
 - [x] Added project documentation links
 - [x] Added known limitations section
 - [x] Added future improvements section
-- [ ] Add architecture diagram
+- [x] Added architecture overview section
+- [ ] Add architecture diagram image
 - [ ] Add Raspberry Pi deployment guide
 - [ ] Add final demo walkthrough
 
@@ -950,7 +860,6 @@ Phase 8 focuses on deploying ZeroSOC to the Raspberry Pi Zero 2 W target environ
 - [ ] Add systemd service
 - [ ] Start ZeroSOC automatically on boot
 - [ ] Document Raspberry Pi deployment steps
----
 
 ## Known Limitations
 
