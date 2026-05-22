@@ -846,9 +846,36 @@ The goal of this phase was to make the project easy to understand for reviewers,
 
 ---
 
-### Phase 8: Raspberry Pi Deployment
+## Phase 8: Raspberry Pi Deployment
 
-Phase 8 focuses on deploying ZeroSOC to the Raspberry Pi Zero 2 W target environment. This phase is planned/in progress and will confirm that the project can run outside the Windows development machine.
+Phase 8 focuses on preparing ZeroSOC to run on Raspberry Pi hardware, especially the Raspberry Pi Zero 2 W.
+
+### Goals
+
+- Prepare ZeroSOC for Raspberry Pi deployment
+- Document required setup steps
+- Run the backend server on Raspberry Pi OS
+- Access the dashboard from another device on the local network
+- Verify SQLite storage, request logs, security events, and network scanning on target hardware
+
+### Deployment Target
+
+ZeroSOC is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W using Raspberry Pi OS Lite.
+
+### Basic Deployment Steps
+
+1. Install Raspberry Pi OS Lite.
+2. Connect the Raspberry Pi to the local network.
+3. Install Python and required dependencies.
+4. Clone the ZeroSOC repository.
+5. Set the API key environment variable.
+6. Start the ZeroSOC backend server.
+7. Open the dashboard from a browser on the local network.
+8. Test the API endpoints, logs, security events, and network device scanning.
+
+### Status
+
+Planned / in progress.
 
 #### Planned Work
 
