@@ -6,21 +6,54 @@ The project is intended to run on lightweight hardware such as a Raspberry Pi Ze
 
 ## Current Status
 
-ZeroSOC is currently in the stabilization, testing, documentation, and portfolio polish stage.
+ZeroSOC is currently in Phase 9: Deployment Testing.
 
-The backend API, SQLite persistence layer, security event system, alert workflow, incident grouping, investigation reporting, local network device monitoring, and browser dashboard are functional for a portfolio-ready first version.
+The backend API, SQLite persistence layer, security event system, alert workflow, incident grouping, investigation reporting, local network device monitoring, protected API routes, and browser dashboard are functional for a portfolio-ready first version.
+
+Current deployment testing confirms that the backend server is reachable, protected API routes accept the configured API key, and the network scanning endpoint returns structured JSON data with discovered devices, known device tracking, unknown device counts, request IDs, and successful HTTP status responses.
 
 Current work is focused on:
 
 - Testing all API endpoints
 - Verifying dashboard controls
+- Testing valid, missing, and invalid API key behavior
 - Keeping screenshots updated
 - Preparing Raspberry Pi deployment
 - Improving project documentation
 - Adding the final architecture diagram and demo walkthrough
 ---
 
+## Phase 9: Deployment Testing
 
+Phase 9 focuses on verifying that ZeroSOC runs correctly in a deployment-style environment and that the backend API, protected routes, dashboard, database-backed features, and network scanning functionality continue to work after the project has been cleaned up and organized.
+
+### Phase 9 Status
+
+Phase 9 is currently in progress.
+
+Current testing confirms that the backend server is reachable, protected API routes accept the configured API key, and the network scanning endpoint returns a valid structured JSON response.
+
+### Confirmed Phase 9 Test Results
+
+| Area | Status |
+|---|---|
+| Backend server startup | Passing |
+| API key protected routes | Passing |
+| JSON response formatting | Passing |
+| Request ID tracking | Passing |
+| Network scan endpoint | Passing |
+| Device discovery | Passing |
+| Known device tracking | Passing |
+| Unknown device detection | Passing |
+| Dashboard/API connection | In testing |
+| Raspberry Pi deployment validation | Pending |
+
+### Latest Verified Endpoint
+
+The following protected endpoint has been tested successfully:
+
+```text
+GET /api/v1/network/scan
 
 ## Project Overview
 
