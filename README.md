@@ -10,50 +10,70 @@ ZeroSOC is currently in Phase 9: Deployment Testing.
 
 The backend API, SQLite persistence layer, security event system, alert workflow, incident grouping, investigation reporting, local network device monitoring, protected API routes, and browser dashboard are functional for a portfolio-ready first version.
 
-Current deployment testing confirms that the backend server is reachable, protected API routes accept the configured API key, and the network scanning endpoint returns structured JSON data with discovered devices, known device tracking, unknown device counts, request IDs, and successful HTTP status responses.
+Local Phase 9 deployment testing confirms that the backend server is reachable, public API routes return successful JSON responses, protected API routes accept the configured API key, missing API keys are rejected, invalid API keys are rejected, and the dashboard refresh workflow works against the running backend.
 
 Current work is focused on:
 
-- Testing all API endpoints
-- Verifying dashboard controls
-- Testing valid, missing, and invalid API key behavior
-- Keeping screenshots updated
 - Preparing Raspberry Pi deployment
+- Keeping screenshots updated
 - Improving project documentation
-- Adding the final architecture diagram and demo walkthrough
+- Adding the final architecture diagram
+- Adding the final demo walkthrough
+
 ---
 
 ## Phase 9: Deployment Testing
 
-Phase 9 focuses on verifying that ZeroSOC runs correctly in a deployment-style environment and that the backend API, protected routes, dashboard, database-backed features, and network scanning functionality continue to work after the project has been cleaned up and organized.
+Phase 9 validates the deployed ZeroSOC backend and dashboard workflow. Core API endpoints were tested locally with valid authentication, missing authentication, and invalid authentication. The dashboard refresh workflow was also tested against the running backend.
+
+### Phase 9 Test Results
+
+- [x] `/api/v1/health` returns successfully
+- [x] `/api/v1/status` returns successfully
+- [x] `/api/v1/system` returns successfully with valid API key
+- [x] `/api/v1/events` returns successfully with valid API key
+- [x] `/api/v1/events/summary` returns successfully with valid API key
+- [x] `/api/v1/devices` returns successfully with valid API key
+- [x] `/api/v1/metrics` returns successfully with valid API key
+- [x] Missing API key test rejects protected request
+- [x] Bad API key test rejects protected request
+- [x] Dashboard refresh button updates dashboard data successfully
 
 ### Phase 9 Status
 
-Phase 9 is currently in progress.
+Local deployment testing is complete.
 
-Current testing confirms that the backend server is reachable, protected API routes accept the configured API key, and the network scanning endpoint returns a valid structured JSON response.
+Raspberry Pi hardware deployment remains planned under Phase 8.
+
+### Phase 9 Test Screenshots
+
+| Test | Screenshot |
+|---|---|
+| Health endpoint | `screenshots/phase-9-health-test.png` |
+| Status endpoint | `screenshots/phase-9-status-test.png` |
+| System endpoint with valid API key | `screenshots/phase-9-system-test.png` |
+| Events endpoint with valid API key | `screenshots/phase-9-events-test.png` |
+| Events summary endpoint with valid API key | `screenshots/phase-9-events-summary-test.png` |
+| Devices endpoint with valid API key | `screenshots/phase-9-devices-test.png` |
+| Metrics endpoint with valid API key | `screenshots/phase-9-metrics-test.png` |
+| Missing API key rejection | `screenshots/phase-9-missing-api-key-test.png` |
+| Bad API key rejection | `screenshots/phase-9-bad-api-key-test.png` |
+| Dashboard refresh test | `screenshots/phase-9-dashboard-refresh.png` |
 
 ### Confirmed Phase 9 Test Results
 
 | Area | Status |
 |---|---|
 | Backend server startup | Passing |
-| API key protected routes | Passing |
+| Public API endpoints | Passing |
+| Protected API endpoints | Passing |
+| Missing API key rejection | Passing |
+| Bad API key rejection | Passing |
 | JSON response formatting | Passing |
 | Request ID tracking | Passing |
-| Network scan endpoint | Passing |
-| Device discovery | Passing |
-| Known device tracking | Passing |
-| Unknown device detection | Passing |
-| Dashboard/API connection | In testing |
+| Dashboard/API connection | Passing |
+| Dashboard refresh workflow | Passing |
 | Raspberry Pi deployment validation | Pending |
-
-### Latest Verified Endpoint
-
-The following protected endpoint has been tested successfully:
-
-```text
-GET /api/v1/network/scan
 
 ## Project Overview
 
