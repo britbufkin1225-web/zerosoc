@@ -962,6 +962,8 @@ From a Windows PowerShell terminal, connect to the Raspberry Pi with SSH:
 
 ```powershell
 ssh YOUR_PI_USERNAME@YOUR_PI_IP_ADDRESS
+```
+
 ## Known Limitations
 
 ZeroSOC is currently a portfolio-ready local SOC dashboard, but it is not intended to be a production security platform.
