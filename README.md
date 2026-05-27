@@ -898,10 +898,9 @@ The goal of this phase was to make the project easy to understand for reviewers,
 - [x] Added known limitations section
 - [x] Added future improvements section
 - [x] Added architecture overview section
-- [ ] Add architecture diagram image
-- [ ] Add Raspberry Pi deployment guide
+- [x] Added architecture diagram image
+- [x] Added Raspberry Pi deployment guide
 - [ ] Add final demo walkthrough
-
 ---
 
 ## Phase 8: Raspberry Pi Deployment
@@ -964,6 +963,133 @@ From a Windows PowerShell terminal, connect to the Raspberry Pi with SSH:
 ssh YOUR_PI_USERNAME@YOUR_PI_IP_ADDRESS
 ```
 
+---
+
+### 3. Update the Raspberry Pi
+
+After connecting with SSH, update the Raspberry Pi package list and installed packages:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+---
+
+### 4. Install Required Packages
+
+Install Python, Git, SQLite, and virtual environment support:
+
+```bash
+sudo apt install -y python3 python3-pip python3-venv git sqlite3
+```
+
+---
+
+### 5. Clone the ZeroSOC Repository
+
+Clone the project from GitHub:
+
+```bash
+git clone https://github.com/britufkin1225-web/zerosoc.git
+cd zerosoc
+```
+
+---
+
+### 6. Create a Python Virtual Environment
+
+Create and activate a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install project dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### 7. Configure the API Key
+
+Set a non-default API key before running ZeroSOC on the Raspberry Pi:
+
+```bash
+export ZEROSOC_API_KEY="change-this-before-real-use"
+```
+
+---
+
+### 8. Start the Backend
+
+Run the backend server:
+
+```bash
+python run.py
+```
+
+The backend should be reachable from the Raspberry Pi at:
+
+```text
+http://localhost:8000
+```
+
+From another device on the same local network, use:
+
+```text
+http://YOUR_PI_IP_ADDRESS:8000
+```
+
+---
+
+### 9. Serve the Dashboard
+
+From the project root, start a simple dashboard server:
+
+```bash
+python3 -m http.server 5500
+```
+
+Then open the dashboard from another device on the same local network:
+
+```text
+http://YOUR_PI_IP_ADDRESS:5500/dashboard/
+```
+
+---
+
+### 10. Verify Raspberry Pi Deployment
+
+Test the public endpoints:
+
+```text
+http://YOUR_PI_IP_ADDRESS:8000/api/v1/health
+http://YOUR_PI_IP_ADDRESS:8000/api/v1/status
+```
+
+Test protected endpoints from PowerShell on your Windows machine:
+
+```powershell
+$headers = @{ "X-API-Key" = "change-this-before-real-use" }
+
+Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/system" -Headers $headers
+Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/metrics" -Headers $headers
+Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/events/summary" -Headers $headers
+Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/devices" -Headers $headers
+```
+
+Expected results:
+
+- Backend starts without errors
+- Public endpoints return JSON
+- Protected endpoints accept the configured API key
+- Dashboard loads from another device on the same network
+- Dashboard refresh works against the Raspberry Pi backend
+
 ## Known Limitations
 
 ZeroSOC is currently a portfolio-ready local SOC dashboard, but it is not intended to be a production security platform.
@@ -987,7 +1113,6 @@ Current limitations include:
 Planned improvements for future versions include:
 
 - Split backend logic into smaller modules
-- Add Raspberry Pi deployment instructions
 - Add systemd service setup for automatic startup
 - Add environment-based production configuration
 - Improve dashboard error handling
@@ -1002,7 +1127,6 @@ Planned improvements for future versions include:
 - Add additional unit tests
 - Add API route tests
 - Add GitHub Actions for automated checks
-- Add architecture diagram
 - Add final demo walkthrough
 - Add additional screenshots as the dashboard evolves
 - Optional future migration to FastAPI
