@@ -1,6 +1,6 @@
 # ZeroSOC Known Limitations and Next Upgrades
 
-This document tracks current limitations, expected development constraints, and future improvements for ZeroSOC.
+This document tracks current limitations, expected development constraints, and planned future improvements for ZeroSOC.
 
 ---
 
@@ -16,6 +16,7 @@ This document tracks current limitations, expected development constraints, and 
 - [ ] Request logging exists, but long-term log rotation is not implemented.
 - [ ] API pagination is limited.
 - [ ] Error handling works, but could be made more detailed across all endpoints.
+- [ ] The backend API runs separately on port `8000`.
 
 ### Dashboard
 
@@ -24,6 +25,8 @@ This document tracks current limitations, expected development constraints, and 
 - [ ] Some dashboard actions still use browser prompts.
 - [ ] Larger datasets may need pagination or virtual scrolling.
 - [ ] Chart styling is functional, but could be refined further.
+- [ ] The dashboard currently runs through a local static server on port `5500`.
+- [ ] Protected routes require the `X-API-Key` header and cannot be tested directly from the browser address bar.
 
 ### Security Events and Alerts
 
@@ -44,7 +47,7 @@ This document tracks current limitations, expected development constraints, and 
 
 ### Raspberry Pi Deployment
 
-- [ ] Raspberry Pi deployment has not been completed yet.
+- [ ] Raspberry Pi hardware deployment has not been completed yet.
 - [ ] systemd service setup has not been added.
 - [ ] Boot-time auto-start has not been configured.
 - [ ] Raspberry Pi CPU temperature support should be tested on real hardware.
@@ -56,14 +59,19 @@ This document tracks current limitations, expected development constraints, and 
 
 ### Short-Term Upgrades
 
-- [ ] Finish documentation cleanup
+- [x] Complete Phase 9 local deployment testing
+- [x] Verify core public API endpoints
+- [x] Verify core protected API endpoints
+- [x] Test missing API key rejection
+- [x] Test invalid API key rejection
+- [x] Test dashboard refresh workflow
+- [x] Capture Phase 9 API response screenshots
+- [x] Capture Phase 9 dashboard refresh screenshot
 - [ ] Verify all README screenshot links
-- [ ] Capture final dashboard screenshots
-- [ ] Capture API response screenshots
-- [ ] Run full backend API test checklist
-- [ ] Run full dashboard smoke test checklist
+- [ ] Update screenshot inventory documentation
 - [ ] Add architecture diagram
 - [ ] Add final demo walkthrough section
+- [ ] Add Raspberry Pi deployment guide
 
 ### Backend Cleanup
 
@@ -149,7 +157,16 @@ screenshots/
   reports-resolved-alerts.png
   events-devices.png
   api-health.png
-  events-summary.png
+  phase-9-health-test.png
+  phase-9-status-test.png
+  phase-9-system-test.png
+  phase-9-events-test.png
+  phase-9-events-summary-test.png
+  phase-9-devices-test.png
+  phase-9-metrics-test.png
+  phase-9-missing-api-key-test.png
+  phase-9-bad-api-key-test.png
+  phase-9-dashboard-refresh.png
 
 data/
   zerosoc.db
