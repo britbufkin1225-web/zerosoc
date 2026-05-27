@@ -60,6 +60,21 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 | Bad API key rejection | `screenshots/phase-9-bad-api-key-test.png` |
 | Dashboard refresh test | `screenshots/phase-9-dashboard-refresh.png` |
 
+## Phase 9 Deployment Testing Screenshots
+
+| Screenshot File | Purpose | Status |
+|---|---|---|
+| `screenshots/phase-9-health-test.png` | Shows successful health endpoint test | Complete |
+| `screenshots/phase-9-status-test.png` | Shows successful status endpoint test | Complete |
+| `screenshots/phase-9-system-test.png` | Shows protected system endpoint test with valid API key | Complete |
+| `screenshots/phase-9-events-test.png` | Shows protected events endpoint test with valid API key | Complete |
+| `screenshots/phase-9-events-summary-test.png` | Shows event summary endpoint test | Complete |
+| `screenshots/phase-9-devices-test.png` | Shows devices endpoint test | Complete |
+| `screenshots/phase-9-metrics-test.png` | Shows metrics endpoint test | Complete |
+| `screenshots/phase-9-missing-api-key-test.png` | Shows protected endpoint rejection without API key | Complete |
+| `screenshots/phase-9-bad-api-key-test.png` | Shows protected endpoint rejection with invalid API key | Complete |
+| `screenshots/phase-9-dashboard-refresh.png` | Shows dashboard refresh workflow | Complete |
+
 ### Confirmed Phase 9 Test Results
 
 | Area | Status |
@@ -110,6 +125,7 @@ ZeroSOC currently includes:
 - Web dashboard using HTML, CSS, JavaScript, and Chart.js
 
 ---
+
 ## What This Demonstrates
 
 ZeroSOC demonstrates practical cybersecurity and backend development skills through a working local SOC-style monitoring dashboard.
@@ -154,38 +170,27 @@ The dashboard includes:
 - Device freshness summaries
 - Dashboard-triggered network scans
 
-## Architecture Overview
+## Architecture
 
-ZeroSOC uses a lightweight local architecture designed for home-lab monitoring and portfolio demonstration.
+ZeroSOC uses a lightweight local architecture designed for Raspberry Pi deployment and home-lab cybersecurity monitoring.
 
-The system includes a Python backend API, SQLite database storage, local request logging, network scanning logic, and a browser-based dashboard frontend. The dashboard communicates with the backend API to display system status, security events, alerts, incidents, investigation reports, notifications, and network device data.
+The system is built around a browser-based dashboard that communicates with a Python backend API over HTTP. The backend handles API key authentication, protected API routes, SQLite storage, request logging, local system metrics, network scanning, and SOC-style event processing.
 
-```text
-Browser Dashboard
-HTML / CSS / JavaScript / Chart.js
-        |
-        | HTTP API Requests
-        v
-Python Backend API
-http.server / BaseHTTPRequestHandler
-        |
-        | Reads and writes data
-        v
-SQLite Database
-Security Events / Alerts / Incidents / Reports / Devices
-        |
-        | Local runtime files
-        v
-Logs and Exports
-Request Logs / CSV Exports / JSON Report Bundles
+![ZeroSOC Architecture](screenshots/zerosoc-architecture.png)
 
-Local System + Network
-System Health / Metrics / Network Scan / ARP Data
-        |
-        v
-SOC Logic
-Auto-Tagging / Alert Creation / Unknown Device Detection
-```
+### Architecture Overview
+
+| Component | Purpose |
+|---|---|
+| Web Dashboard | Browser-based frontend built with HTML, CSS, JavaScript, and Chart.js |
+| Python Backend API | Handles HTTP routes, protected endpoints, request processing, and API key authentication |
+| SQLite Database | Stores security events and discovered network devices |
+| Request Logs | Tracks API requests and supports CSV/JSON export workflows |
+| System Metrics | Collects local CPU, RAM, disk, uptime, and system health information |
+| Network Scanner | Reads local network, ARP, and device data |
+| SOC Logic | Handles auto-tagging, alert creation, and unknown device detection |
+| Deployment Target | Designed to run on Raspberry Pi hardware inside a local network |
+
 
 ---
 
@@ -903,44 +908,60 @@ The goal of this phase was to make the project easy to understand for reviewers,
 
 Phase 8 focuses on preparing ZeroSOC to run on Raspberry Pi hardware, especially the Raspberry Pi Zero 2 W.
 
-### Goals
-
-- Prepare ZeroSOC for Raspberry Pi deployment
-- Document required setup steps
-- Run the backend server on Raspberry Pi OS
-- Access the dashboard from another device on the local network
-- Verify SQLite storage, request logs, security events, and network scanning on target hardware
+ZeroSOC is intended to run on lightweight hardware using Raspberry Pi OS Lite, Python, SQLite, and a browser-based dashboard that can be accessed from another device on the same local network.
 
 ### Deployment Target
 
-ZeroSOC is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W using Raspberry Pi OS Lite.
+| Area | Target |
+|---|---|
+| Device | Raspberry Pi Zero 2 W or newer |
+| Operating System | Raspberry Pi OS Lite |
+| Backend | Python backend server |
+| Database | SQLite |
+| Dashboard | HTML, CSS, JavaScript browser dashboard |
+| Network | Local home-lab network |
 
-### Basic Deployment Steps
+---
 
-1. Install Raspberry Pi OS Lite.
-2. Connect the Raspberry Pi to the local network.
-3. Install Python and required dependencies.
-4. Clone the ZeroSOC repository.
-5. Set the API key environment variable.
-6. Start the ZeroSOC backend server.
-7. Open the dashboard from a browser on the local network.
-8. Test the API endpoints, logs, security events, and network device scanning.
+### Raspberry Pi Deployment Goals
 
-### Status
+- Prepare ZeroSOC for Raspberry Pi deployment
+- Install Raspberry Pi OS Lite
+- Enable SSH access
+- Connect the Raspberry Pi to the local network
+- Install Python, Git, SQLite, and required dependencies
+- Clone the ZeroSOC repository
+- Configure the ZeroSOC API key
+- Start the backend server on the Raspberry Pi
+- Access the dashboard from another computer on the local network
+- Verify API endpoints against the Raspberry Pi backend
+- Verify dashboard refresh behavior
+- Optionally configure ZeroSOC to start automatically on boot using systemd
 
-Planned / in progress.
+---
 
-#### Planned Work
+### 1. Prepare Raspberry Pi OS
 
-- [ ] Deploy backend to Raspberry Pi Zero 2 W
-- [ ] Enable SSH access
-- [ ] Install project requirements
-- [ ] Run backend on Raspberry Pi
-- [ ] Test dashboard against Raspberry Pi backend
-- [ ] Add systemd service
-- [ ] Start ZeroSOC automatically on boot
-- [ ] Document Raspberry Pi deployment steps
+Use Raspberry Pi Imager to install Raspberry Pi OS Lite on the microSD card.
 
+Recommended setup options:
+
+- Set hostname to `zerosoc-pi`
+- Enable SSH
+- Configure Wi-Fi
+- Set username and password
+- Configure locale and keyboard settings
+
+After writing the image, insert the microSD card into the Raspberry Pi and power it on.
+
+---
+
+### 2. Connect to the Raspberry Pi
+
+From a Windows PowerShell terminal, connect to the Raspberry Pi with SSH:
+
+```powershell
+ssh YOUR_PI_USERNAME@YOUR_PI_IP_ADDRESS
 ## Known Limitations
 
 ZeroSOC is currently a portfolio-ready local SOC dashboard, but it is not intended to be a production security platform.
