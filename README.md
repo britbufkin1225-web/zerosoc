@@ -4,27 +4,45 @@ ZeroSOC is a lightweight cybersecurity monitoring dashboard built with Python, S
 
 The project is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W, while also being easy to develop and test on a Windows machine.
 
-## Current Status
+## Project Status
 
-ZeroSOC has completed local Phase 9 deployment testing. Raspberry Pi hardware validation remains planned.
+ZeroSOC is currently in Phase 9: Deployment Testing and Documentation Cleanup.
 
-The backend API, SQLite persistence layer, security event system, alert workflow, incident grouping, investigation reporting, local network device monitoring, protected API routes, and browser dashboard are functional for a portfolio-ready first version.
+Phase 9 focuses on validating the backend API, confirming dashboard functionality, testing deployment behavior, documenting verified endpoints, and cleaning the README so the project is easier to understand from GitHub.
 
-Local Phase 9 deployment testing confirms that the backend server is reachable, public API routes return successful JSON responses, protected API routes accept the configured API key, missing API keys are rejected, invalid API keys are rejected, and the dashboard refresh workflow works against the running backend.
+Current Phase 9 progress:
 
-Current work is focused on:
-
-- Preparing Raspberry Pi deployment
-- Keeping screenshots updated
-- Improving project documentation
-- Adding the final architecture diagram
-- Adding the final demo walkthrough
-
+- Backend API endpoints tested
+- API key protection tested
+- Dashboard refresh behavior tested
+- Security events endpoint tested
+- Event summary endpoint tested
+- Device inventory endpoint tested
+- Backend metrics endpoint tested
+- README updated with Phase 9 notes
+- Deployment testing screenshots captured
+- Documentation cleanup in progress
 ---
 
-## Phase 9: Deployment Testing
+## Deployment Testing
 
-Phase 9 validates the local ZeroSOC backend and dashboard workflow before Raspberry Pi hardware deployment. Core API endpoints were tested locally with valid authentication, missing authentication, and invalid authentication. The dashboard refresh workflow was also tested against the running backend.
+Phase 9 deployment testing verifies that ZeroSOC can run locally, expose its backend API, protect selected routes with an API key, and display live backend data in the dashboard.
+
+The following areas were tested:
+
+- Backend health check
+- Backend status endpoint
+- System information endpoint
+- Security events endpoint
+- Security event summary endpoint
+- Device inventory endpoint
+- Backend metrics endpoint
+- Missing API key behavior
+- Invalid API key behavior
+- Dashboard refresh behavior
+- Frontend dashboard loading from the backend API
+
+Deployment testing confirmed that the backend API is reachable, protected endpoints reject unauthorized requests, and the dashboard can display backend-driven data.
 
 ### Phase 9 Test Results
 
@@ -1106,46 +1124,35 @@ Expected results:
 - Dashboard loads from another device on the same network
 - Dashboard refresh works against the Raspberry Pi backend
 
-## Known Limitations
+## Known Issues and Limitations
 
-ZeroSOC is currently a portfolio-ready local SOC dashboard, but it is not intended to be a production security platform.
+ZeroSOC is currently a portfolio-focused local SOC dashboard and is still under active development.
 
-Current limitations include:
+Known limitations:
 
-- The backend uses Python’s built-in `http.server` instead of a production web framework.
-- The default development API key is `dev-zero-soc-key` and should be changed before real deployment.
-- Protected API routes cannot be tested directly from the browser address bar because they require the `X-API-Key` header.
-- Protected endpoints should be tested through PowerShell, API tools, or the dashboard frontend.
-- Network scans may take time depending on subnet size, device response behavior, and local firewall settings.
-- CPU temperature may return `null` on Windows because Raspberry Pi thermal paths are not available.
-- Most backend logic is currently contained in `run.py`; future cleanup should split the code into modules.
-- Webhook notifications require `ZEROSOC_ALERT_WEBHOOK_URL` to be configured.
-- Raspberry Pi deployment has not been completed yet.
+- The dashboard is designed for local development and demonstration use.
+- The frontend currently uses a simple static HTML, CSS, and JavaScript structure.
+- API key authentication is intentionally lightweight for local testing.
+- Network scanning behavior may vary depending on operating system, permissions, firewall rules, and network environment.
+- Dashboard scrolling and layout behavior may need additional refinement as more events and devices are added.
+- This project is not intended to replace a production SIEM or enterprise monitoring platform.
 
 ---
 
 ## Future Improvements
 
-Planned improvements for future versions include:
+Planned future improvements include:
 
-- Split backend logic into smaller modules
-- Add systemd service setup for automatic startup
-- Add environment-based production configuration
-- Improve dashboard error handling
-- Add pagination for larger event, alert, report, and device lists
-- Add user accounts and login support
-- Add trusted device allowlist support
-- Add stronger unknown device detection rules
-- Add email notification support
-- Improve webhook notification configuration
-- Add historical event charts
-- Add longer-term metrics tracking
-- Add additional unit tests
-- Add API route tests
-- Add GitHub Actions for automated checks
-- Add final demo walkthrough
-- Add additional screenshots as the dashboard evolves
-- Optional future migration to FastAPI
+- Improve dashboard scrolling behavior for long event and device lists
+- Add more detailed event filtering and search controls
+- Add event detail views
+- Add persistent alert workflows
+- Improve frontend state handling
+- Add automated backend tests
+- Add Raspberry Pi deployment documentation
+- Add architecture diagrams
+- Add production deployment notes
+- Improve API authentication and configuration handling
 ---
 
 ## Suggested Future Project Structure
