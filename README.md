@@ -24,10 +24,11 @@ Current work is focused on:
 
 ## Phase 9: Deployment Testing
 
-Phase 9 validates the deployed ZeroSOC backend and dashboard workflow. Core API endpoints were tested locally with valid authentication, missing authentication, and invalid authentication. The dashboard refresh workflow was also tested against the running backend.
+Phase 9 validates the local ZeroSOC backend and dashboard workflow before Raspberry Pi hardware deployment. Core API endpoints were tested locally with valid authentication, missing authentication, and invalid authentication. The dashboard refresh workflow was also tested against the running backend.
 
 ### Phase 9 Test Results
 
+- [x] Backend server starts successfully
 - [x] `/api/v1/health` returns successfully
 - [x] `/api/v1/status` returns successfully
 - [x] `/api/v1/system` returns successfully with valid API key
@@ -37,7 +38,10 @@ Phase 9 validates the deployed ZeroSOC backend and dashboard workflow. Core API 
 - [x] `/api/v1/metrics` returns successfully with valid API key
 - [x] Missing API key test rejects protected request
 - [x] Bad API key test rejects protected request
+- [x] Dashboard loads against the running backend
 - [x] Dashboard refresh button updates dashboard data successfully
+- [x] Security Events counter displays the current event count
+- [x] Security Events table uses a scrollable layout for long event lists
 
 ### Phase 9 Status
 
@@ -49,31 +53,35 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 
 | Test | Screenshot |
 |---|---|
-| Health endpoint | `screenshots/phase-9-health-test.png` |
-| Status endpoint | `screenshots/phase-9-status-test.png` |
-| System endpoint with valid API key | `screenshots/phase-9-system-test.png` |
-| Events endpoint with valid API key | `screenshots/phase-9-events-test.png` |
-| Events summary endpoint with valid API key | `screenshots/phase-9-events-summary-test.png` |
-| Devices endpoint with valid API key | `screenshots/phase-9-devices-test.png` |
-| Metrics endpoint with valid API key | `screenshots/phase-9-metrics-test.png` |
-| Missing API key rejection | `screenshots/phase-9-missing-api-key-test.png` |
-| Bad API key rejection | `screenshots/phase-9-bad-api-key-test.png` |
-| Dashboard refresh test | `screenshots/phase-9-dashboard-refresh.png` |
+| Health endpoint | `screenshots/api-health.png` |
+| Status endpoint | `screenshots/api-status.png` |
+| System endpoint with valid API key | `screenshots/api-system.png` |
+| Events endpoint with valid API key | `screenshots/api-events.png` |
+| Events summary endpoint with valid API key | `screenshots/api-events-summary.png` |
+| Devices endpoint with valid API key | `screenshots/api-devices.png` |
+| Metrics endpoint with valid API key | `screenshots/api-metrics.png` |
+| Missing API key rejection | `screenshots/api-missing-key.png` |
+| Bad API key rejection | `screenshots/api-bad-key.png` |
+| Dashboard refresh test | `screenshots/dashboard-refresh-proof.png` |
+| Dashboard Security Events section | `screenshots/dashboard-events.png` |
+| Dashboard Network Devices section | `screenshots/dashboard-devices.png` |
 
 ## Phase 9 Deployment Testing Screenshots
 
 | Screenshot File | Purpose | Status |
 |---|---|---|
-| `screenshots/phase-9-health-test.png` | Shows successful health endpoint test | Complete |
-| `screenshots/phase-9-status-test.png` | Shows successful status endpoint test | Complete |
-| `screenshots/phase-9-system-test.png` | Shows protected system endpoint test with valid API key | Complete |
-| `screenshots/phase-9-events-test.png` | Shows protected events endpoint test with valid API key | Complete |
-| `screenshots/phase-9-events-summary-test.png` | Shows event summary endpoint test | Complete |
-| `screenshots/phase-9-devices-test.png` | Shows devices endpoint test | Complete |
-| `screenshots/phase-9-metrics-test.png` | Shows metrics endpoint test | Complete |
-| `screenshots/phase-9-missing-api-key-test.png` | Shows protected endpoint rejection without API key | Complete |
-| `screenshots/phase-9-bad-api-key-test.png` | Shows protected endpoint rejection with invalid API key | Complete |
-| `screenshots/phase-9-dashboard-refresh.png` | Shows dashboard refresh workflow | Complete |
+| `screenshots/api-health.png` | Shows successful health endpoint test | Complete |
+| `screenshots/api-status.png` | Shows successful status endpoint test | Complete |
+| `screenshots/api-system.png` | Shows protected system endpoint test with valid API key | Complete |
+| `screenshots/api-events.png` | Shows protected events endpoint test with valid API key | Complete |
+| `screenshots/api-events-summary.png` | Shows event summary endpoint test | Complete |
+| `screenshots/api-devices.png` | Shows devices endpoint test | Complete |
+| `screenshots/api-metrics.png` | Shows metrics endpoint test | Complete |
+| `screenshots/api-missing-key.png` | Shows protected endpoint rejection without API key | Complete |
+| `screenshots/api-bad-key.png` | Shows protected endpoint rejection with invalid API key | Complete |
+| `screenshots/dashboard-refresh-proof.png` | Shows dashboard refresh workflow | Complete |
+| `screenshots/dashboard-events.png` | Shows searchable, filterable, scrollable security event table with event count | Complete |
+| `screenshots/dashboard-devices.png` | Shows searchable and filterable network device inventory | Complete |
 
 ### Confirmed Phase 9 Test Results
 
@@ -88,6 +96,8 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 | Request ID tracking | Passing |
 | Dashboard/API connection | Passing |
 | Dashboard refresh workflow | Passing |
+| Security Events counter | Passing |
+| Security Events scrollable table | Passing |
 | Raspberry Pi deployment validation | Pending |
 
 ## Project Overview
@@ -220,11 +230,17 @@ The alerts workflow section shows active alert filters, priority filters, SLA fi
 
 The investigation and resolution section shows investigation report filters, report activity tracking, export controls, resolved alert history, SLA resolution details, and reopen actions.
 
-### Security Events and Network Devices
+### Security Events
 
-![ZeroSOC Security Events and Network Devices](screenshots/events-devices.png)
+![ZeroSOC Security Events](screenshots/dashboard-events.png)
 
-The event and device sections show searchable security events, time-range filtering, event export controls, device inventory, device status filtering, network scan controls, and device CSV export support.
+The security events section shows searchable and filterable event records, severity filtering, time-range filtering, event export controls, a live event count, and a scrollable event table for longer event lists.
+
+### Network Devices
+
+![ZeroSOC Network Devices](screenshots/dashboard-devices.png)
+
+The network devices section shows discovered devices, device status filtering, device search, freshness indicators, network scan controls, and device CSV export support.
 
 ### API Health Response
 
@@ -1157,12 +1173,23 @@ dashboard/
   app.js
 
 screenshots/
+  screenshots/
   dashboard-overview.png
   event-summary-analytics.png
   alerts-incidents-notifications.png
   reports-resolved-alerts.png
-  events-devices.png
+  dashboard-events.png
+  dashboard-devices.png
+  dashboard-refresh-proof.png
   api-health.png
+  api-status.png
+  api-system.png
+  api-events.png
+  api-events-summary.png
+  api-devices.png
+  api-metrics.png
+  api-missing-key.png
+  api-bad-key.png
 
 data/
   zerosoc.db
