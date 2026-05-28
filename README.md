@@ -31,16 +31,16 @@ Phase 9 deployment testing verifies that ZeroSOC can run locally, expose its bac
 The following areas were tested:
 
 - Backend health check
-- Backend status endpoint
-- System information endpoint
-- Security events endpoint
-- Security event summary endpoint
-- Device inventory endpoint
-- Backend metrics endpoint
+- Status endpoint
+- System endpoint
+- Events endpoint
+- Event summary endpoint
+- Devices endpoint
+- Metrics endpoint
 - Missing API key behavior
 - Invalid API key behavior
 - Dashboard refresh behavior
-- Frontend dashboard loading from the backend API
+- Frontend loads backend data
 
 Deployment testing confirmed that the backend API is reachable, protected endpoints reject unauthorized requests, and the dashboard can display backend-driven data.
 
