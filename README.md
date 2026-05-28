@@ -6,7 +6,7 @@ The project is intended to run on lightweight hardware such as a Raspberry Pi Ze
 
 ## Current Status
 
-ZeroSOC is currently in Phase 9: Deployment Testing.
+ZeroSOC has completed local Phase 9 deployment testing. Raspberry Pi hardware validation remains planned.
 
 The backend API, SQLite persistence layer, security event system, alert workflow, incident grouping, investigation reporting, local network device monitoring, protected API routes, and browser dashboard are functional for a portfolio-ready first version.
 
@@ -1173,7 +1173,6 @@ dashboard/
   app.js
 
 screenshots/
-  screenshots/
   dashboard-overview.png
   event-summary-analytics.png
   alerts-incidents-notifications.png
