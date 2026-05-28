@@ -1102,6 +1102,12 @@ async function openPrintableReport(reportId) {
 
 function renderEvents(data) {
     const visibleEvents = Array.isArray(data) ? data : data.events || [];
+    const eventCountLabel = document.getElementById("event-count-label");
+
+    if (eventCountLabel) {
+        const count = visibleEvents.length;
+        eventCountLabel.textContent = `Showing ${count} event${count === 1 ? "" : "s"}`;
+    }
 
     if (visibleEvents.length === 0) {
         eventsTable.innerHTML = "<p>No matching security events found.</p>";
@@ -1137,7 +1143,6 @@ function renderEvents(data) {
         </table>
     `;
 }
-
 function renderDeviceSummary(data) {
     const devices = Array.isArray(data) ? data : data.devices || [];
     const summary = (Array.isArray(data) ? null : data.summary) || {};

@@ -79,6 +79,75 @@ button:hover {
     transform: translateY(-1px);
 }
 
+/* =========================
+   Security Events Scroll + Counter
+   ========================= */
+
+.table-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 12px 0;
+    color: #cbd5e1;
+    font-size: 0.9rem;
+}
+
+#event-count-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    border: 1px solid rgba(130, 143, 160, 0.75);
+    border-radius: 999px;
+    padding: 6px 12px;
+    background: rgba(42, 49, 57, 0.98);
+    color: #f8fafc;
+    font-weight: 850;
+}
+
+/* Scroll container for the Security Events table */
+.events-table-scroll {
+    max-height: 430px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid rgba(130, 143, 160, 0.75);
+    border-radius: 14px;
+    background: rgba(42, 49, 57, 0.98);
+}
+
+/* Keep the Security Events table header visible while scrolling */
+.events-table-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #37414c;
+}
+
+/* Prevent long event messages/tags from blowing out the table */
+.events-table-scroll td {
+    max-width: 360px;
+    overflow-wrap: anywhere;
+}
+
+/* Slightly nicer scrollbar for Chromium/Edge */
+.events-table-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.events-table-scroll::-webkit-scrollbar-track {
+    background: #252b32;
+    border-radius: 999px;
+}
+
+.events-table-scroll::-webkit-scrollbar-thumb {
+    background: #748091;
+    border-radius: 999px;
+}
+
+.events-table-scroll::-webkit-scrollbar-thumb:hover {
+    background: #9ea8b5;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
