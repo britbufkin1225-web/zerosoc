@@ -22,6 +22,7 @@ Current Phase 9 progress:
 - README updated with Phase 9 notes
 - Deployment testing screenshots captured
 - Documentation cleanup in progress
+
 ---
 
 ## Deployment Testing
@@ -32,20 +33,6 @@ The following areas were tested:
 
 - Backend health check
 - Status endpoint
-- System endpoint
-- Events endpoint
-- Event summary endpoint
-- Devices endpoint
-- Metrics endpoint
-- Missing API key behavior
-- Invalid API key behavior
-- Dashboard refresh behavior
-- Frontend loads backend data
-
-Deployment testing confirmed that the backend API is reachable, protected endpoints reject unauthorized requests, and the dashboard can display backend-driven data.
-
-### Phase 9 Test Results
-
 - [x] Backend server starts successfully
 - [x] `/api/v1/health` returns successfully
 - [x] `/api/v1/status` returns successfully
@@ -70,7 +57,7 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 ### Phase 9 Test Screenshots
 
 | Test | Screenshot |
-|---|---|
+| --- | --- |
 | Health endpoint | `screenshots/api-health.png` |
 | Status endpoint | `screenshots/api-status.png` |
 | System endpoint with valid API key | `screenshots/api-system.png` |
@@ -87,7 +74,7 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 ## Phase 9 Deployment Testing Screenshots
 
 | Screenshot File | Purpose | Status |
-|---|---|---|
+| --- | --- | --- |
 | `screenshots/api-health.png` | Shows successful health endpoint test | Complete |
 | `screenshots/api-status.png` | Shows successful status endpoint test | Complete |
 | `screenshots/api-system.png` | Shows protected system endpoint test with valid API key | Complete |
@@ -104,7 +91,7 @@ Raspberry Pi hardware deployment remains planned under Phase 8.
 ### Confirmed Phase 9 Test Results
 
 | Area | Status |
-|---|---|
+| --- | --- |
 | Backend server startup | Passing |
 | Public API endpoints | Passing |
 | Protected API endpoints | Passing |
@@ -209,7 +196,7 @@ The system is built around a browser-based dashboard that communicates with a Py
 ### Architecture Overview
 
 | Component | Purpose |
-|---|---|
+| --- | --- |
 | Web Dashboard | Browser-based frontend built with HTML, CSS, JavaScript, and Chart.js |
 | Python Backend API | Handles HTTP routes, protected endpoints, request processing, and API key authentication |
 | SQLite Database | Stores security events and discovered network devices |
@@ -218,7 +205,6 @@ The system is built around a browser-based dashboard that communicates with a Py
 | Network Scanner | Reads local network, ARP, and device data |
 | SOC Logic | Handles auto-tagging, alert creation, and unknown device detection |
 | Deployment Target | Designed to run on Raspberry Pi hardware inside a local network |
-
 
 ---
 
@@ -271,7 +257,7 @@ The health endpoint confirms that the ZeroSOC backend is running and returning s
 ## Tech Stack
 
 | Area | Technology |
-|---|---|
+| --- | --- |
 | Backend | Python |
 | Server | `http.server` / `BaseHTTPRequestHandler` |
 | Database | SQLite |
@@ -442,14 +428,14 @@ X-API-Key: dev-zero-soc-key
 ### Public Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/health` | Basic backend health check |
 | GET | `/api/v1/status` | Lightweight service status |
 
 ### Protected Core Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/system` | Host system health and machine details |
 | GET | `/api/v1/metrics` | Request, event, and device metrics |
 | GET | `/api/v1/logs/recent` | Recent API request logs |
@@ -457,7 +443,7 @@ X-API-Key: dev-zero-soc-key
 ### Security Event Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/events` | List recent security events with optional filters |
 | GET | `/api/v1/events/export` | Export security events as CSV |
 | GET | `/api/v1/events/summary` | Security event summary and counts |
@@ -467,7 +453,7 @@ X-API-Key: dev-zero-soc-key
 ### Alert Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/alerts` | List active, acknowledged, or resolved alerts |
 | GET | `/api/v1/alerts/export` | Export alerts as CSV |
 | POST | `/api/v1/alerts/{id}/status` | Update alert status or acknowledgement note |
@@ -475,7 +461,7 @@ X-API-Key: dev-zero-soc-key
 ### Incident Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/alerts/incidents/export` | Export grouped alert incidents as CSV |
 | GET | `/api/v1/alerts/incidents/activity` | List incident activity history |
 | GET | `/api/v1/alerts/incidents/activity/export` | Export incident activity as CSV |
@@ -484,7 +470,7 @@ X-API-Key: dev-zero-soc-key
 ### Investigation Report Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/alerts/reports` | List investigation reports |
 | GET | `/api/v1/alerts/reports/activity` | List investigation report activity |
 | GET | `/api/v1/alerts/reports/activity/export` | Export report activity as CSV |
@@ -499,14 +485,14 @@ X-API-Key: dev-zero-soc-key
 ### Notification Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/alerts/notifications` | List alert notification history |
 | POST | `/api/v1/alerts/notifications` | Log or send notifications for unresolved alerts |
 
 ### Network Device Endpoints
 
 | Method | Endpoint | Description |
-|---|---|---|
+| --- | --- | --- |
 | GET | `/api/v1/devices` | List known network devices |
 | GET | `/api/v1/devices/export` | Export network devices as CSV |
 | GET | `/api/v1/network/scan` | Run local network scan and detect unknown devices |
@@ -515,12 +501,12 @@ X-API-Key: dev-zero-soc-key
 
 ## Query Filters
 
-### Security Events
+### Security Event Query Filters
 
 `GET /api/v1/events` supports optional filters:
 
 | Query Parameter | Description |
-|---|---|
+| --- | --- |
 | `limit` | Maximum number of events to return |
 | `severity` | Filter by severity: `critical`, `high`, `medium`, `low` |
 | `tag` | Filter by event tag |
@@ -542,7 +528,7 @@ Examples:
 `GET /api/v1/alerts` supports optional filters:
 
 | Query Parameter | Description |
-|---|---|
+| --- | --- |
 | `limit` | Maximum number of alerts to return |
 | `status` | Filter by `active`, `open`, `acknowledged`, `resolved`, or `all` |
 | `severity` | Filter by severity |
@@ -558,12 +544,12 @@ Examples:
 /api/v1/alerts?sla_status=overdue
 ```
 
-### Network Devices
+### Network Device Query Filters
 
 `GET /api/v1/devices` supports optional filters:
 
 | Query Parameter | Description |
-|---|---|
+| --- | --- |
 | `limit` | Maximum number of devices to return |
 | `status` | Filter by device status |
 | `q` | Search IP, hostname, MAC address, or status |
@@ -682,7 +668,7 @@ After starting the backend and dashboard server, verify:
 Additional project documentation is available in the `docs/` folder. These files support testing, screenshot tracking, and future project cleanup.
 
 | Document | Purpose |
-|---|---|
+| --- | --- |
 | [`backend-api-test-checklist.md`](docs/backend-api-test-checklist.md) | Step-by-step checklist for testing public and protected backend API endpoints |
 | [`dashboard-smoke-test-checklist.md`](docs/dashboard-smoke-test-checklist.md) | Checklist for verifying dashboard loading, controls, filters, charts, exports, and scan actions |
 | [`screenshots-inventory.md`](docs/screenshots-inventory.md) | Tracks README screenshot files, screenshot names, and screenshot update status |
@@ -696,7 +682,7 @@ Additional project documentation is available in the `docs/` folder. These files
 
 The foundation phase established the initial project repository, file structure, and baseline documentation needed to begin building ZeroSOC as a portfolio-ready cybersecurity/backend project.
 
-#### Completed Work
+#### Phase 1 Completed Work
 
 - [x] Created GitHub repository
 - [x] Added initial project folder structure
@@ -714,7 +700,7 @@ Phase 2 focused on building the main backend API layer for ZeroSOC. This phase e
 
 The goal of this phase was to create a stable backend foundation that could collect system data, expose security information, support frontend dashboard requests, and prepare the project for SOC-style features.
 
-#### Completed Work
+#### Phase 2 Completed Work
 
 - [x] Built the Python backend server
 - [x] Created versioned API routes under `/api/v1`
@@ -735,7 +721,7 @@ The goal of this phase was to create a stable backend foundation that could coll
 #### Core API Features
 
 | Feature | Description |
-|---|---|
+| --- | --- |
 | API Versioning | Routes are organized under `/api/v1` |
 | API Key Authentication | Protected endpoints require the `X-API-Key` header |
 | Centralized Routing | GET and POST requests are handled through cleaner route logic |
@@ -774,7 +760,7 @@ The goal of this phase was to create a structured way for ZeroSOC to record secu
 #### SOC Logic Features
 
 | Feature | Description |
-|---|---|
+| --- | --- |
 | Event Storage | Security events are stored persistently in SQLite |
 | Event Creation | Events can be created through backend logic or API requests |
 | Auto-Tagging | Events are automatically labeled based on severity, type, and message content |
@@ -790,7 +776,7 @@ Phase 4 focused on expanding ZeroSOC from event tracking into a more complete SO
 
 The goal of this phase was to make ZeroSOC feel less like a raw event database and more like a lightweight security operations workflow tool.
 
-#### Completed Work
+#### Phase 4 Completed Work
 
 - [x] Added automatic alert creation from notable events
 - [x] Added active and resolved alert tracking
@@ -818,7 +804,7 @@ The goal of this phase was to make ZeroSOC feel less like a raw event database a
 #### SOC Workflow Features
 
 | Feature | Description |
-|---|---|
+| --- | --- |
 | Alerts | Surfaces review-worthy security events |
 | Alert Status | Tracks active, acknowledged, and resolved alerts |
 | SLA Tracking | Marks alerts as on-track, due-soon, overdue, or resolved |
@@ -835,7 +821,7 @@ Phase 5 focused on adding local network visibility to ZeroSOC. This phase introd
 
 The goal of this phase was to connect the backend API to real local network activity so ZeroSOC could provide lightweight network awareness in a home-lab environment.
 
-#### Completed Work
+#### Phase 5 Completed Work
 
 - [x] Added local IP address detection
 - [x] Added local `/24` network range calculation
@@ -857,7 +843,7 @@ The goal of this phase was to connect the backend API to real local network acti
 #### Network Device Fields
 
 | Field | Description |
-|---|---|
+| --- | --- |
 | `id` | Internal device record ID |
 | `ip_address` | Device IP address |
 | `hostname` | Detected hostname, when available |
@@ -874,7 +860,7 @@ Phase 6 focused on building the browser-based dashboard for ZeroSOC. This phase 
 
 The goal of this phase was to make ZeroSOC easier to demonstrate as a cybersecurity/backend portfolio project by giving the API a clean visual layer.
 
-#### Completed Work
+### Dashboard Frontend Completed Work
 
 - [x] Built the dashboard frontend
 - [x] Connected dashboard panels to backend API endpoints
@@ -902,7 +888,7 @@ The goal of this phase was to make ZeroSOC easier to demonstrate as a cybersecur
 #### Dashboard Sections
 
 | Section | Purpose |
-|---|---|
+| --- | --- |
 | Dashboard Overview | Shows the main dashboard header, API status, summary cards, system status, and metrics |
 | Event Summary and Analytics | Displays event counts, severity breakdowns, and event type summaries |
 | Alerts and Incidents | Shows active alert filters, grouped incidents, alert activity, and notifications |
@@ -919,7 +905,7 @@ Phase 7 focused on preparing ZeroSOC for GitHub presentation and portfolio revie
 
 The goal of this phase was to make the project easy to understand for reviewers, hiring managers, clients, or anyone viewing the repository for the first time.
 
-#### Completed Work
+#### Phase 7 Completed Work
 
 - [x] Updated the README project summary
 - [x] Added clear project goals
@@ -935,6 +921,7 @@ The goal of this phase was to make the project easy to understand for reviewers,
 - [x] Added architecture diagram image
 - [x] Added Raspberry Pi deployment guide
 - [ ] Add final demo walkthrough
+
 ---
 
 ## Phase 8: Raspberry Pi Deployment
@@ -946,7 +933,7 @@ ZeroSOC is intended to run on lightweight hardware using Raspberry Pi OS Lite, P
 ### Deployment Target
 
 | Area | Target |
-|---|---|
+| --- | --- |
 | Device | Raspberry Pi Zero 2 W or newer |
 | Operating System | Raspberry Pi OS Lite |
 | Backend | Python backend server |
@@ -1153,6 +1140,7 @@ Planned future improvements include:
 - Add architecture diagrams
 - Add production deployment notes
 - Improve API authentication and configuration handling
+
 ---
 
 ## Suggested Future Project Structure
