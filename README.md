@@ -191,7 +191,7 @@ ZeroSOC uses a lightweight local architecture designed for Raspberry Pi deployme
 
 The system is built around a browser-based dashboard that communicates with a Python backend API over HTTP. The backend handles API key authentication, protected API routes, SQLite storage, request logging, local system metrics, network scanning, and SOC-style event processing.
 
-![ZeroSOC Architecture](screenshots/zerosoc-architecture.png)
+![ZeroSOC Architecture](screenshots/zerosoc-architecture-v2.png)
 
 ### Architecture Overview
 
