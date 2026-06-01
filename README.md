@@ -139,6 +139,44 @@ ZeroSOC currently includes:
 - JSON export support for investigation report handoff bundles
 - Web dashboard using HTML, CSS, JavaScript, and Chart.js
 
+## Portfolio Summary
+
+ZeroSOC is a lightweight local security operations dashboard built to demonstrate backend API design, cybersecurity monitoring concepts, local persistence, and dashboard integration.
+
+The project uses a browser-based frontend connected to a Python backend API. The backend exposes protected API endpoints, collects system and network data, stores security events and discovered devices in SQLite, writes structured request logs, and returns JSON responses to the dashboard.
+
+ZeroSOC is designed for home-lab and Raspberry Pi deployment, making it small enough to run on lightweight hardware while still demonstrating practical backend and security engineering concepts.
+
+## Technical Highlights
+
+- Python backend API using HTTP route handling
+- API key authentication with protected endpoints
+- SQLite database storage for security events and network devices
+- Structured request logging for API activity
+- Local network scanner for device discovery
+- Security event tracking with severity, event type, and tagging
+- Event summary reporting for dashboard analytics
+- Browser-based dashboard using HTML, CSS, and JavaScript
+- Designed for Raspberry Pi and local home-lab deployment
+
+## Skills Demonstrated
+
+| Area | Demonstrated Through |
+| --- | --- |
+| Backend API Design | Versioned API routes, JSON responses, protected endpoints |
+| Cybersecurity Concepts | Security events, alert-style tracking, unknown device detection |
+| Authentication | API key checks using the `X-API-Key` header |
+| Data Persistence | SQLite storage for events and network device records |
+| Logging | Structured request logs for API activity |
+| Network Visibility | Local device discovery using scanner logic |
+| Frontend Integration | Dashboard panels that consume backend API data |
+| Deployment Awareness | Lightweight architecture intended for Raspberry Pi deployment |
+| Documentation | README structure, screenshots, architecture diagram, endpoint references |
+
+## Project Scope
+
+ZeroSOC is a portfolio-focused local SOC-style dashboard. It is not intended to replace enterprise SIEM, EDR, or commercial monitoring platforms. Instead, it demonstrates how core backend, logging, persistence, authentication, and security-monitoring concepts can be combined into a small, understandable system.
+
 ---
 
 ## What This Demonstrates
