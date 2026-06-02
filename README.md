@@ -170,30 +170,21 @@ The project focuses on showing how backend APIs, authentication, logging, persis
 
 ## Dashboard Preview
 
-ZeroSOC includes a browser-based dashboard that displays backend API data in a clean light-gray SOC-style interface with readable cards, accessible focus states, visible action buttons, responsive filter toolbars, and dashboard summary sections.
+ZeroSOC includes a browser-based dashboard that displays backend API data in a clean SOC-style interface.
 
-The dashboard includes:
+The dashboard provides a visual layer for:
 
-- API status indicator
-- Refresh control
-- Summary cards
-- System status panel
-- Metrics panel
-- Event summary section
-- Security event analytics charts
-- Searchable and filterable security events table
-- Exportable security event CSVs
-- Active alerts section
-- Alert priority and SLA filters
-- Incident groups
-- Incident activity tracking
-- Alert notifications panel
-- Investigation reports panel
-- Report activity tracking
-- Resolved alerts section
-- Searchable and filterable network devices table
-- Device freshness summaries
+- Backend health and API status
+- System metrics and runtime information
+- Security event summaries and analytics charts
+- Searchable and filterable security events
+- Active alerts, incidents, notifications, and investigation reports
+- Resolved alert history and report activity
+- Searchable network device inventory
+- CSV and JSON export workflows
 - Dashboard-triggered network scans
+
+The dashboard is designed to make the backend easier to demonstrate, test, and explain during a portfolio walkthrough.
 
 ## Architecture
 
@@ -219,6 +210,8 @@ The system is built around a browser-based dashboard that communicates with a Py
 ---
 
 ## Screenshots
+
+The screenshots below show the main dashboard sections, backend API testing evidence, and deployment verification results.
 
 ### Dashboard Overview
 
