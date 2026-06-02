@@ -259,25 +259,35 @@ The health endpoint confirms that the ZeroSOC backend is running and returning s
 
 ## Tech Stack
 
-| Area | Technology |
+| Layer | Technology |
 | --- | --- |
 | Backend | Python |
-| Server | `http.server` / `BaseHTTPRequestHandler` |
+| HTTP Server | `http.server` / `BaseHTTPRequestHandler` |
 | Database | SQLite |
 | Frontend | HTML, CSS, JavaScript |
 | Charts | Chart.js |
 | Logging | JSON-style request logs |
-| Security | API key authentication |
-| Platform Target | Raspberry Pi Zero 2 W / Windows development machine |
+| Authentication | API key authentication with `X-API-Key` |
+| Deployment Target | Raspberry Pi Zero 2 W / local Windows development |
 | Version Control | Git and GitHub |
+| Project Management | GitHub Issues, Labels, Milestones, and Project Board |
 
 ---
 
 ## Core Features
 
-### System Health Monitoring
+### Backend API
 
-ZeroSOC exposes system status data through API endpoints. This includes service status, host information, uptime, platform details, Python version, disk usage, and current backend runtime information.
+ZeroSOC exposes versioned API routes under `/api/v1` for system health, metrics, logs, security events, alerts, investigation reports, notifications, network devices, and local network scanning.
+
+Core backend features include:
+
+- Public health and status endpoints
+- Protected API endpoints
+- Consistent JSON-style responses
+- Request ID tracking
+- Structured request logging
+- Backend metrics reporting
 
 ### API Key Authentication
 
@@ -289,134 +299,8 @@ Example:
 Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{"X-API-Key"="dev-zero-soc-key"}
 ```
 
-### Request Logging
-
-ZeroSOC records API request activity using structured logs. Request logs include request ID, method, endpoint, client IP, status code, latency, timestamp, and message.
-
-### Security Event Collection
-
-Security events can be created, stored, filtered, summarized, exported, and reviewed through the API and dashboard.
-
-Security event data includes:
-
-- Event ID
-- Timestamp
-- Source IP
-- Event type
-- Severity
-- Message
-- Tags
-
-### Event Auto-Tagging
-
-ZeroSOC automatically assigns tags to events based on severity, event type, source, and message content.
-
-Example tags include:
-
-- `high-priority`
-- `needs-review`
-- `failed-login`
-- `authentication`
-- `network`
-- `possible-recon`
-- `unknown-device`
-- `malware-related`
-- `system`
-- `storage`
-
-### Alert Workflow
-
-High-priority and review-worthy events are surfaced as alerts. Alerts can be filtered, acknowledged, resolved, reopened, exported, and grouped into incidents.
-
-Alert workflow features include:
-
-- Active alerts
-- Resolved alerts
-- Alert status updates
-- Acknowledgement notes
-- Priority scoring
-- SLA tracking
-- Overdue and due-soon states
-- Alert CSV export
-
-### Incident Grouping
-
-Alerts are grouped into incident-style views by source and event type. Incident groups can be assigned an owner, given notes, updated by status, and exported.
-
-Incident features include:
-
-- Incident grouping
-- Incident owner tracking
-- Incident status tracking
-- Incident notes
-- Incident activity history
-- Incident activity export
-- Incident CSV export
-
-### Investigation Reports
-
-ZeroSOC supports lightweight investigation reports tied to alerts.
-
-Report features include:
-
-- Create report from alert
-- Edit report title and summary
-- Mark report as draft or final
-- Print report view
-- Export report handoff JSON
-- Archive and restore reports
-- Report activity tracking
-- Report activity CSV export
-
-### Alert Notifications
-
-ZeroSOC tracks alert notifications locally and supports optional webhook delivery.
-
-Notification features include:
-
-- Local notification log
-- Optional webhook delivery
-- Notification cooldown
-- Delivered, failed, and skipped notification states
-- Notification history in the dashboard
-
-### Network Device Monitoring
-
-ZeroSOC can scan the local network, identify active devices, store discovered devices, and create security events for unknown devices.
-
-Device data includes:
-
-- IP address
-- Hostname
-- MAC address
-- Status
-- First seen timestamp
-- Last seen timestamp
-- Stale device status
-
-### Dashboard UI
-
-The dashboard displays backend data through a browser-based interface using HTML, CSS, JavaScript, and Chart.js.
-
-Dashboard features include:
-
-- System status
-- API metrics
-- Event summaries
-- Security event analytics charts
-- Active alert queue
-- Incident groups
-- Incident activity
-- Alert notifications
-- Investigation reports
-- Report activity
-- Resolved alerts
-- Searchable security events
-- Searchable network devices
-- CSV export controls
-- Dashboard-triggered network scans
-
 ---
+Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{"X-API-Key"="dev-zero-soc-key"}
 
 ## API Endpoints
 
