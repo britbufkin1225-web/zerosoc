@@ -6,9 +6,67 @@
 ![Project](https://img.shields.io/badge/Type-Cybersecurity%20Portfolio-blueviolet)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-ZeroSOC is a lightweight cybersecurity monitoring dashboard built with Python, SQLite, and a simple web frontend. It is designed as a small home-lab SOC-style project that monitors local system health, tracks API activity, stores security events, scans local network devices, groups alerts into incidents, tracks investigation reports, and displays operational data in a browser dashboard.
+ZeroSOC is a lightweight cybersecurity monitoring dashboard built with Python, SQLite, and a browser-based frontend.  It is designed as a home-lab SOC-style project that monitors local system health, tracks API activity, stores security events, scans local network devices, groups alerts into incidents, tracks investigation reports, and displays operational data through a dashboard.  The project is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W, while also being easy to develop and test on a Windows machine.
 
-The project is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W, while also being easy to develop and test on a Windows machine.
+## Project Overview
+
+ZeroSOC is being built as a cybersecurity and backend development portfolio project.
+
+The goal is to demonstrate practical backend engineering, API design, local persistence, request logging, basic security controls, network visibility, alert workflows, incident tracking, investigation reporting, and dashboard presentation in one compact project.
+
+ZeroSOC currently includes:
+
+- Python backend server
+- Versioned API routes
+- Protected API endpoints
+- API key authentication
+- SQLite database storage
+- Structured request logging
+- Request ID tracking
+- Security event collection
+- Event auto-tagging
+- Event severity classification
+- Event summary reporting
+- Local network device scanning
+- Unknown device detection
+- Alert workflow tracking
+- Incident grouping
+- Investigation report tracking
+- Alert notification tracking
+- CSV and JSON export support
+- Web dashboard using HTML, CSS, JavaScript, and Chart.js
+
+- ## Portfolio Value
+
+ZeroSOC demonstrates practical cybersecurity and backend development skills through a working local SOC-style monitoring dashboard.
+
+The project shows experience with:
+
+- Backend API design using Python
+- API key authentication for protected routes
+- SQLite database design and persistence
+- Structured request logging and request ID tracking
+- Security event classification and auto-tagging
+- Alert workflow design with SLA and priority tracking
+- Incident grouping and investigation report workflows
+- Local network scanning and unknown-device detection
+- Frontend dashboard development using HTML, CSS, JavaScript, and Chart.js
+- GitHub documentation, project management, and release planning
+
+## Skills Demonstrated
+
+| Area | Demonstrated Through |
+| --- | --- |
+| Backend API Design | Versioned API routes, JSON responses, protected endpoints |
+| Cybersecurity Concepts | Security events, alert-style tracking, unknown device detection |
+| Authentication | API key checks using the `X-API-Key` header |
+| Data Persistence | SQLite storage for events and network device records |
+| Logging | Structured request logs for API activity |
+| Network Visibility | Local device discovery using scanner logic |
+| Frontend Integration | Dashboard panels that consume backend API data |
+| Deployment Awareness | Lightweight architecture intended for Raspberry Pi deployment |
+| Documentation | README structure, screenshots, architecture diagram, endpoint references |
+
 
 ## Project Status
 
@@ -145,14 +203,6 @@ ZeroSOC currently includes:
 - JSON export support for investigation report handoff bundles
 - Web dashboard using HTML, CSS, JavaScript, and Chart.js
 
-## Portfolio Summary
-
-ZeroSOC is a lightweight local security operations dashboard built to demonstrate backend API design, cybersecurity monitoring concepts, local persistence, and dashboard integration.
-
-The project uses a browser-based frontend connected to a Python backend API. The backend exposes protected API endpoints, collects system and network data, stores security events and discovered devices in SQLite, writes structured request logs, and returns JSON responses to the dashboard.
-
-ZeroSOC is designed for home-lab and Raspberry Pi deployment, making it small enough to run on lightweight hardware while still demonstrating practical backend and security engineering concepts.
-
 ## Technical Highlights
 
 - Python backend API using HTTP route handling
@@ -165,42 +215,11 @@ ZeroSOC is designed for home-lab and Raspberry Pi deployment, making it small en
 - Browser-based dashboard using HTML, CSS, and JavaScript
 - Designed for Raspberry Pi and local home-lab deployment
 
-## Skills Demonstrated
-
-| Area | Demonstrated Through |
-| --- | --- |
-| Backend API Design | Versioned API routes, JSON responses, protected endpoints |
-| Cybersecurity Concepts | Security events, alert-style tracking, unknown device detection |
-| Authentication | API key checks using the `X-API-Key` header |
-| Data Persistence | SQLite storage for events and network device records |
-| Logging | Structured request logs for API activity |
-| Network Visibility | Local device discovery using scanner logic |
-| Frontend Integration | Dashboard panels that consume backend API data |
-| Deployment Awareness | Lightweight architecture intended for Raspberry Pi deployment |
-| Documentation | README structure, screenshots, architecture diagram, endpoint references |
-
 ## Project Scope
 
 ZeroSOC is a portfolio-focused local SOC-style dashboard. It is not intended to replace enterprise SIEM, EDR, or commercial monitoring platforms. Instead, it demonstrates how core backend, logging, persistence, authentication, and security-monitoring concepts can be combined into a small, understandable system.
 
 ---
-
-## What This Demonstrates
-
-ZeroSOC demonstrates practical cybersecurity and backend development skills through a working local SOC-style monitoring dashboard.
-
-Key demonstrated skills include:
-
-- Backend API design using Python
-- API key authentication for protected routes
-- SQLite database storage for security events and network devices
-- Request logging and request ID tracking
-- Security event classification and auto-tagging
-- Alert workflow design with SLA and priority tracking
-- Incident grouping and investigation report workflows
-- Local network scanning and unknown-device detection
-- Frontend dashboard development using HTML, CSS, JavaScript, and Chart.js
-- GitHub documentation with screenshots, endpoint references, and test checklists
 
 ## Dashboard Preview
 
