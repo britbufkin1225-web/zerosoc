@@ -57,16 +57,15 @@ The project shows experience with:
 
 | Area | Demonstrated Through |
 | --- | --- |
-| Backend API Design | Versioned API routes, JSON responses, protected endpoints |
-| Cybersecurity Concepts | Security events, alert-style tracking, unknown device detection |
+| Backend API Design | Versioned routes, protected endpoints, structured JSON responses, and endpoint testing |
+| Cybersecurity Concepts | Security events, alert workflows, unknown-device detection, and security-focused logging |
 | Authentication | API key checks using the `X-API-Key` header |
-| Data Persistence | SQLite storage for events and network device records |
-| Logging | Structured request logs for API activity |
-| Network Visibility | Local device discovery using scanner logic |
-| Frontend Integration | Dashboard panels that consume backend API data |
-| Deployment Awareness | Lightweight architecture intended for Raspberry Pi deployment |
-| Documentation | README structure, screenshots, architecture diagram, endpoint references |
-
+| Data Persistence | SQLite storage for security events, alerts, reports, and network device records |
+| Logging and Observability | Structured request logs, request IDs, metrics, and API activity tracking |
+| Network Visibility | Local device discovery, ARP/ping-based scanning, and device inventory tracking |
+| Frontend Integration | Dashboard panels, filters, charts, tables, exports, and backend API consumption |
+| Deployment Awareness | Local testing workflow and Raspberry Pi deployment planning |
+| Documentation | README structure, screenshots, architecture diagram, endpoint references, and GitHub project setup |
 ---
 
 ## Project Status
@@ -74,6 +73,46 @@ The project shows experience with:
 ZeroSOC is currently in active development.
 
 The current completed focus is **Phase 9: Deployment Testing and Documentation Cleanup**. This phase validated the local backend API, protected endpoint behavior, dashboard refresh workflow, event/device data display, and project documentation.
+
+## Deployment Testing
+
+Phase 9 deployment testing confirms that ZeroSOC can run locally, expose backend API endpoints, protect selected routes with an API key, and display live backend data in the dashboard.
+
+### Tested Endpoints and Workflows
+
+| Area | Verified Behavior |
+| --- | --- |
+| Health endpoint | `/api/v1/health` returns successfully |
+| Status endpoint | `/api/v1/status` returns successfully |
+| System endpoint | `/api/v1/system` returns successfully with valid API key |
+| Events endpoint | `/api/v1/events` returns successfully with valid API key |
+| Event summary endpoint | `/api/v1/events/summary` returns successfully with valid API key |
+| Devices endpoint | `/api/v1/devices` returns successfully with valid API key |
+| Metrics endpoint | `/api/v1/metrics` returns successfully with valid API key |
+| Missing API key test | Protected request is rejected |
+| Bad API key test | Protected request is rejected |
+| Dashboard refresh test | Dashboard updates data from backend |
+| Security Events section | Event counter and scrollable event table display correctly |
+| Network Devices section | Device inventory displays through the dashboard |
+
+## Technical Highlights
+
+- Python backend API using lightweight HTTP route handling
+- Versioned API routes under `/api/v1`
+- API key authentication for protected endpoints
+- SQLite persistence for security events and network devices
+- Structured request logging with request ID tracking
+- Security event classification, severity tracking, and auto-tagging
+- Alert workflow support with priority, SLA, incident, and report tracking
+- Local network scanner for device discovery and unknown-device detection
+- Browser dashboard using HTML, CSS, JavaScript, and Chart.js
+- CSV and JSON export support for SOC-style review workflows
+  
+## Project Scope
+
+ZeroSOC is a portfolio-focused local SOC-style dashboard. It is designed for educational, home-lab, and demonstration use. It is not intended to replace enterprise SIEM, EDR, SOAR, or commercial monitoring platforms.
+The project focuses on showing how backend APIs, authentication, logging, persistence, network visibility, security events, alert workflows, and dashboard presentation can be combined into a compact local monitoring system.
+---
 
 ### Completed Phase 9 Work
 
@@ -112,27 +151,6 @@ The current completed focus is **Phase 9: Deployment Testing and Documentation C
 
 ---
 
-## Deployment Testing
-
-Phase 9 deployment testing confirms that ZeroSOC can run locally, expose backend API endpoints, protect selected routes with an API key, and display live backend data in the dashboard.
-
-### Tested Endpoints and Workflows
-
-| Area | Verified Behavior |
-| --- | --- |
-| Health endpoint | `/api/v1/health` returns successfully |
-| Status endpoint | `/api/v1/status` returns successfully |
-| System endpoint | `/api/v1/system` returns successfully with valid API key |
-| Events endpoint | `/api/v1/events` returns successfully with valid API key |
-| Event summary endpoint | `/api/v1/events/summary` returns successfully with valid API key |
-| Devices endpoint | `/api/v1/devices` returns successfully with valid API key |
-| Metrics endpoint | `/api/v1/metrics` returns successfully with valid API key |
-| Missing API key test | Protected request is rejected |
-| Bad API key test | Protected request is rejected |
-| Dashboard refresh test | Dashboard updates data from backend |
-| Security Events section | Event counter and scrollable event table display correctly |
-| Network Devices section | Device inventory displays through the dashboard |
-
 ### Phase 9 Test Screenshots
 
 | Screenshot File | Purpose |
@@ -149,58 +167,6 @@ Phase 9 deployment testing confirms that ZeroSOC can run locally, expose backend
 | `screenshots/dashboard-refresh-proof.png` | Shows dashboard refresh workflow |
 | `screenshots/dashboard-events.png` | Shows searchable, filterable, scrollable security event table with event count |
 | `screenshots/dashboard-devices.png` | Shows searchable and filterable network device inventory |
-
-## Project Overview
-
-ZeroSOC is being built as a cybersecurity and backend development portfolio project.
-
-The goal is to demonstrate practical backend engineering, API design, local persistence, request logging, basic security controls, network visibility, alert workflows, incident tracking, investigation reporting, and dashboard presentation in one compact project.
-
-ZeroSOC currently includes:
-
-- Python backend server
-- Versioned API routes
-- Protected API endpoints
-- API key authentication
-- SQLite database storage
-- Structured request logging
-- Request ID tracking
-- Security event collection
-- Event auto-tagging
-- Event severity classification
-- Event summary reporting
-- Time-window filtering for security event review
-- Local network device scanning
-- Unknown device detection
-- Automatic alert creation from notable events
-- Alert status workflow
-- Alert SLA tracking with overdue and due-soon states
-- Priority and SLA filtering for alert queues
-- Incident grouping
-- Incident activity tracking
-- Investigation report tracking
-- Alert notification tracking
-- CSV export support for alerts, incidents, security events, network devices, and investigation activity
-- JSON export support for investigation report handoff bundles
-- Web dashboard using HTML, CSS, JavaScript, and Chart.js
-
-## Technical Highlights
-
-- Python backend API using HTTP route handling
-- API key authentication with protected endpoints
-- SQLite database storage for security events and network devices
-- Structured request logging for API activity
-- Local network scanner for device discovery
-- Security event tracking with severity, event type, and tagging
-- Event summary reporting for dashboard analytics
-- Browser-based dashboard using HTML, CSS, and JavaScript
-- Designed for Raspberry Pi and local home-lab deployment
-
-## Project Scope
-
-ZeroSOC is a portfolio-focused local SOC-style dashboard. It is not intended to replace enterprise SIEM, EDR, or commercial monitoring platforms. Instead, it demonstrates how core backend, logging, persistence, authentication, and security-monitoring concepts can be combined into a small, understandable system.
-
----
 
 ## Dashboard Preview
 
@@ -1241,26 +1207,6 @@ requirements.txt
 .env.example
 .gitignore
 ```
-
----
-
-## Portfolio Value
-
-ZeroSOC demonstrates practical skills in:
-
-- Backend API development
-- API authentication
-- Request logging
-- SQLite persistence
-- Security event modeling
-- Event classification and tagging
-- SOC-style alert workflows
-- Incident grouping
-- Investigation reporting
-- Local network monitoring
-- Dashboard frontend development
-- Data export workflows
-- GitHub project documentation
 
 ---
 
