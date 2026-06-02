@@ -1,5 +1,11 @@
 # ZeroSOC
 
+![Python](https://img.shields.io/badge/Python-3.x-blue)
+![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey)
+![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
+![Project](https://img.shields.io/badge/Type-Cybersecurity%20Portfolio-blueviolet)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 ZeroSOC is a lightweight cybersecurity monitoring dashboard built with Python, SQLite, and a simple web frontend. It is designed as a small home-lab SOC-style project that monitors local system health, tracks API activity, stores security events, scans local network devices, groups alerts into incidents, tracks investigation reports, and displays operational data in a browser dashboard.
 
 The project is intended to run on lightweight hardware such as a Raspberry Pi Zero 2 W, while also being easy to develop and test on a Windows machine.
