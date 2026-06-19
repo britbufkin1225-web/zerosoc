@@ -66,6 +66,7 @@ The project shows experience with:
 | Frontend Integration | Dashboard panels, filters, charts, tables, exports, and backend API consumption |
 | Deployment Awareness | Local testing workflow and Raspberry Pi deployment planning |
 | Documentation | README structure, screenshots, architecture diagram, endpoint references, and GitHub project setup |
+
 ---
 
 ## Project Status
@@ -73,6 +74,22 @@ The project shows experience with:
 ZeroSOC is currently in active development.
 
 The current completed focus is **Phase 9: Deployment Testing and Documentation Cleanup**. This phase validated the local backend API, protected endpoint behavior, dashboard refresh workflow, event/device data display, and project documentation.
+
+## Verification Status
+
+Latest verification checkpoint confirms the backend can start, pass tests, respond locally, and shut down cleanly.
+
+| Check | Status |
+| --- | ---: |
+| Backend health route | PASS |
+| Server startup | PASS |
+| Test suite | 44/44 PASS |
+| Live local health check | PASS |
+| Clean shutdown | PASS |
+| Git working tree | Clean |
+| Code changes required | None |
+
+This checkpoint verifies more than isolated unit tests. It confirms the backend can run locally and respond through the actual health endpoint.
 
 ## Deployment Testing
 
@@ -111,8 +128,8 @@ Phase 9 deployment testing confirms that ZeroSOC can run locally, expose backend
 ## Project Scope
 
 ZeroSOC is a portfolio-focused local SOC-style dashboard. It is designed for educational, home-lab, and demonstration use. It is not intended to replace enterprise SIEM, EDR, SOAR, or commercial monitoring platforms.
-The project focuses on showing how backend APIs, authentication, logging, persistence, network visibility, security events, alert workflows, and dashboard presentation can be combined into a compact local monitoring system.
----
+
+The project focuses on showing how backend APIs, authentication, logging, persistence, network visibility, security events, alert workflows, and dashboard presentation can be combined into a compact local monitoring system.---
 
 ### Completed Phase 9 Work
 
@@ -300,7 +317,12 @@ Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{"X-API-Key"="
 ```
 
 ---
-Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{"X-API-Key"="dev-zero-soc-key"}
+<!-- markdownlint-disable MD034 -->
+
+```powershell
+Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{
+    "X-API-Key"="dev-zero-soc-key"
+}
 
 ## API Endpoints
 
