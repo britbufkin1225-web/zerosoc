@@ -308,21 +308,39 @@ Core backend features include:
 
 ### API Key Authentication
 
-Protected endpoints require an API key using the `X-API-Key` header.
+Protected endpoints require an API key sent in the `X-API-Key` header.
 
-Example:
+#### Required configuration before startup
+
+ZeroSOC no longer ships a default API key. You **must** set the
+`ZEROSOC_API_KEY` environment variable to a long random secret before starting
+the backend. If it is unset or blank, the server refuses to start and prints a
+configuration error. Whitespace-only values are treated as missing.
+
+Set it in PowerShell (Windows):
 
 ```powershell
-Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{"X-API-Key"="dev-zero-soc-key"}
+$env:ZEROSOC_API_KEY = "replace-with-a-long-random-secret"
 ```
 
----
-<!-- markdownlint-disable MD034 -->
+Set it in bash (Linux/macOS):
+
+```bash
+export ZEROSOC_API_KEY="replace-with-a-long-random-secret"
+```
+
+The key is compared using a constant-time comparison (`hmac.compare_digest`)
+and is never printed or logged by the backend.
+
+#### Calling a protected endpoint
 
 ```powershell
-Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers @{
-    "X-API-Key"="dev-zero-soc-key"
-}
+$headers = @{ "X-API-Key" = "replace-with-a-long-random-secret" }
+Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers $headers
+```
+
+Both `/system` and `/api/v1/system` require this header. The `/health`,
+`/status`, `/api/v1/health`, and `/api/v1/status` endpoints remain public.
 
 ## API Endpoints
 
@@ -331,7 +349,7 @@ ZeroSOC exposes public service-check endpoints and protected SOC data endpoints.
 Protected endpoints require:
 
 ```text
-X-API-Key: dev-zero-soc-key
+X-API-Key: replace-with-a-long-random-secret
 ```
 
 ### Public Endpoints
@@ -481,7 +499,23 @@ git clone https://github.com/britufkin1225-web/zerosoc.git
 cd zerosoc
 ```
 
-### 2. Run the backend
+### 2. Set the required API key
+
+ZeroSOC will not start without `ZEROSOC_API_KEY`. Set it first.
+
+PowerShell (Windows):
+
+```powershell
+$env:ZEROSOC_API_KEY = "replace-with-a-long-random-secret"
+```
+
+bash (Linux/macOS):
+
+```bash
+export ZEROSOC_API_KEY="replace-with-a-long-random-secret"
+```
+
+### 3. Run the backend
 
 ```bash
 python run.py
@@ -493,7 +527,24 @@ Backend URL:
 http://localhost:8000
 ```
 
-### 3. Run the dashboard locally
+By default the backend binds to `127.0.0.1` (localhost only), so it is not
+reachable from other devices. This is the safe default.
+
+To expose ZeroSOC on a trusted home-lab LAN, set the host explicitly:
+
+```powershell
+$env:ZEROSOC_HOST = "0.0.0.0"
+```
+
+```bash
+export ZEROSOC_HOST="0.0.0.0"
+```
+
+> **Security warning:** `ZEROSOC_HOST=0.0.0.0` binds to all interfaces and
+> exposes ZeroSOC to every device on your local network. Only use it on a
+> network you trust.
+
+### 4. Run the dashboard locally
 
 From the project root:
 
@@ -506,6 +557,28 @@ Dashboard URL:
 ```text
 http://localhost:5500/dashboard/
 ```
+
+The dashboard is served cross-origin from port `5500`, so those origins
+(`http://localhost:5500` and `http://127.0.0.1:5500`) are allowed by default.
+CORS is restricted to this allowlist — the API never returns a wildcard origin
+and never grants unconditional Private Network Access. If you serve the
+dashboard from a different host or port (for example a LAN address), add that
+exact origin to `ZEROSOC_ALLOWED_ORIGINS` (comma-separated):
+
+```bash
+export ZEROSOC_ALLOWED_ORIGINS="http://192.168.1.50:5500"
+```
+
+### 5. Enter the dashboard API key at runtime
+
+The dashboard no longer contains a built-in key. On first load it prompts you
+to enter the API key, which is sent as the `X-API-Key` header. By default the
+key is kept only in memory. You can optionally choose to keep it in
+`sessionStorage` (current tab session) or, through an explicit second
+confirmation, in `localStorage` (persists across restarts). The key is never
+placed in the URL and never written to the browser console. If no key is
+entered, the dashboard shows a clear error instead of sending an invalid
+credential.
 
 ---
 
@@ -531,7 +604,7 @@ Expected:
 Protected routes require the API key header. Use PowerShell:
 
 ```powershell
-$headers = @{ "X-API-Key" = "dev-zero-soc-key" }
+$headers = @{ "X-API-Key" = "replace-with-a-long-random-secret" }
 
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/system" -Headers $headers
 Invoke-RestMethod -Uri "http://localhost:8000/api/v1/metrics" -Headers $headers
@@ -944,12 +1017,30 @@ pip install -r requirements.txt
 
 ---
 
-### 7. Configure the API Key
+### 7. Configure the API Key and Network Binding
 
-Set a non-default API key before running ZeroSOC on the Raspberry Pi:
+Set the required API key before running ZeroSOC on the Raspberry Pi:
 
 ```bash
-export ZEROSOC_API_KEY="change-this-before-real-use"
+export ZEROSOC_API_KEY="replace-with-a-long-random-secret"
+```
+
+The backend binds to `127.0.0.1` (localhost only) by default, so it will not
+be reachable from other devices. To allow access from other devices on your
+trusted home-lab network, bind to all interfaces explicitly:
+
+```bash
+export ZEROSOC_HOST="0.0.0.0"
+```
+
+> **Security warning:** `ZEROSOC_HOST=0.0.0.0` exposes ZeroSOC to every device
+> on your local network. Only use it on a network you trust.
+
+Because the dashboard is served cross-origin from another device, add the
+dashboard origin to the CORS allowlist (use your Pi's LAN address):
+
+```bash
+export ZEROSOC_ALLOWED_ORIGINS="http://YOUR_PI_IP_ADDRESS:5500"
 ```
 
 ---
@@ -962,13 +1053,8 @@ Run the backend server:
 python run.py
 ```
 
-The backend should be reachable from the Raspberry Pi at:
-
-```text
-http://localhost:8000
-```
-
-From another device on the same local network, use:
+With `ZEROSOC_HOST=0.0.0.0` set, the backend is reachable from another device
+on the same local network at:
 
 ```text
 http://YOUR_PI_IP_ADDRESS:8000
@@ -1004,7 +1090,7 @@ http://YOUR_PI_IP_ADDRESS:8000/api/v1/status
 Test protected endpoints from PowerShell on your Windows machine:
 
 ```powershell
-$headers = @{ "X-API-Key" = "change-this-before-real-use" }
+$headers = @{ "X-API-Key" = "replace-with-a-long-random-secret" }
 
 Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/system" -Headers $headers
 Invoke-RestMethod -Uri "http://YOUR_PI_IP_ADDRESS:8000/api/v1/metrics" -Headers $headers
@@ -1028,10 +1114,18 @@ Known limitations:
 
 - The dashboard is designed for local development and demonstration use.
 - The frontend currently uses a simple static HTML, CSS, and JavaScript structure.
-- API key authentication is intentionally lightweight for local testing.
+- Authentication is a single shared API key. This is adequate for local and
+  home-lab use but is not a substitute for per-user accounts, roles, or session
+  management. There is no rate limiting, account lockout, or audit of key use.
+- Security hardening so far covers requiring a configured key, constant-time key
+  comparison, authenticating `/system`, defaulting to a localhost-only bind, and
+  restricting CORS. Transport is plain HTTP (no TLS), so the key and data are not
+  encrypted in transit; run only on a trusted network.
+- Binding to `0.0.0.0` (opt-in via `ZEROSOC_HOST`) exposes the service to the
+  local network and should only be used on a network you trust.
 - Network scanning behavior may vary depending on operating system, permissions, firewall rules, and network environment.
 - Dashboard scrolling and layout behavior may need additional refinement as more events and devices are added.
-- This project is not intended to replace a production SIEM or enterprise monitoring platform.
+- This project is not intended to replace a production SIEM or enterprise monitoring platform, and it has not been penetration-tested.
 
 ---
 
