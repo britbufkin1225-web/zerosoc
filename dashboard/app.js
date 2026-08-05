@@ -39,6 +39,14 @@ function persistApiKey(key) {
     }
 
     if (!rememberForSession) {
+        // Memory-only is an explicit retention choice. Remove any older
+        // persisted value so it cannot silently return after a reload.
+        try {
+            sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+            localStorage.removeItem(API_KEY_STORAGE_KEY);
+        } catch (error) {
+            // Web storage may be unavailable; the new key remains in memory.
+        }
         return;
     }
 
@@ -63,6 +71,14 @@ function persistApiKey(key) {
     if (persistAcrossRestarts) {
         try {
             localStorage.setItem(API_KEY_STORAGE_KEY, key);
+        } catch (error) {
+            // Ignore: session storage above is still in effect.
+        }
+    } else {
+        // Session-only is also an explicit retention choice. Clear any older
+        // durable value rather than allowing it to reappear next session.
+        try {
+            localStorage.removeItem(API_KEY_STORAGE_KEY);
         } catch (error) {
             // Ignore: session storage above is still in effect.
         }

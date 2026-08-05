@@ -11,7 +11,7 @@ This document tracks current limitations, expected development constraints, and 
 - [ ] The backend currently uses Python's built-in `http.server` instead of a production web framework.
 - [ ] Most backend logic is currently contained in `run.py`.
 - [ ] The backend should eventually be split into smaller modules.
-- [ ] The development API key defaults to `replace-with-a-long-random-secret`.
+- [x] The API key must be supplied through `ZEROSOC_API_KEY`; there is no committed default credential.
 - [ ] Environment-based production configuration is not fully implemented yet.
 - [ ] Request logging exists, but long-term log rotation is not implemented.
 - [ ] API pagination is limited.
