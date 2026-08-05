@@ -27,8 +27,6 @@ Before making changes:
 
 ## Development Guidelines
 
-Please follow these guidelines:
-
 - Keep backend route behavior consistent.
 - Use clear and readable code.
 - Avoid committing secrets, API keys, tokens, passwords, or `.env` files.
@@ -39,8 +37,6 @@ Please follow these guidelines:
 
 ## Pull Request Checklist
 
-Before submitting a pull request, confirm:
-
 - [ ] The project starts without errors
 - [ ] Affected backend routes were tested
 - [ ] Dashboard changes were checked in the browser
@@ -50,9 +46,4 @@ Before submitting a pull request, confirm:
 
 ## Security Issues
 
-Do not open public issues for security vulnerabilities.
-
-If you find a security issue, follow the instructions in:
-
-```text
-SECURITY.md
+Do not open public issues for security vulnerabilities. Follow the private reporting instructions in [SECURITY.md](SECURITY.md).

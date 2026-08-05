@@ -1,40 +1,25 @@
 # ZeroSOC Screenshots Inventory
 
-Use this file to track dashboard and API screenshots used in the README.
+These retained tracked images are historical portfolio evidence. ZS-4 reconciled filenames and references but did not recapture or freshly verify the application at runtime.
 
-## Screenshot Folder
+| Image | Purpose |
+| --- | --- |
+| `screenshots/zerosoc-architecture-v2.png` | Architecture overview |
+| `screenshots/dashboard-overview.png` | Dashboard header, status cards, system data, and metrics |
+| `screenshots/event-summary-analytics.png` | Event summary and analytics |
+| `screenshots/alerts-incidents-notifications.png` | Alert, incident, and notification workflows |
+| `screenshots/reports-resolved-alerts.png` | Investigation reports and resolved alerts |
+| `screenshots/dashboard-events.png` | Security-events table |
+| `screenshots/dashboard-devices.png` | Device inventory |
+| `screenshots/events-devices.png` | Combined event and device view |
+| `screenshots/api-health.png` | Health response |
+| `screenshots/api-status.png` | Status response |
+| `screenshots/api-system.png` | Protected system response |
+| `screenshots/api-events.png` | Protected events response |
+| `screenshots/api-events-summary.png` | Event-summary response |
+| `screenshots/api-devices.png` | Device response |
+| `screenshots/api-metrics.png` | Metrics response |
+| `screenshots/api-missing-key.png` | Missing-key rejection |
+| `screenshots/api-bad-key.png` | Invalid-key rejection |
 
-Expected screenshot location:
-
-```text
-screenshots/
-```
-
----
-
-## README Screenshots
-
-| Screenshot File | README Section | Purpose | Status |
-|---|---|---|---|
-| `screenshots/dashboard-overview.png` | Dashboard Overview | Shows the main dashboard header, API status, summary cards, system status, and metrics | Needs recapture |
-| `screenshots/event-summary-analytics.png` | Event Summary and Security Event Analytics | Shows event summary counts and analytics charts | Needs recapture |
-| `screenshots/alerts-incidents-notifications.png` | Alerts, Incidents, and Notifications | Shows alert filters, incident groups, incident activity, and notifications | Needs recapture |
-| `screenshots/reports-resolved-alerts.png` | Investigation Reports and Resolved Alerts | Shows report workflow, report activity, resolved alerts, and reopen controls | Needs recapture |
-| `screenshots/events-devices.png` | Security Events and Network Devices | Shows searchable events, event filters, device inventory, scan controls, and export buttons | Missing |
-| `screenshots/api-health.png` | API Health Response | Shows `/api/v1/health` JSON response | Needs recapture |
-| `screenshots/events-summary.png` | Events Summary API Response | Shows `/api/v1/events/summary` response | Missing |
-
-## Screenshot Capture Checklist
-
-### Dashboard Screenshots
-
-- [ ] Capture `dashboard-overview.png`
-- [ ] Capture `event-summary-analytics.png`
-- [ ] Capture `alerts-incidents-notifications.png`
-- [ ] Capture `reports-resolved-alerts.png`
-- [ ] Capture `events-devices.png`
-
-### API Screenshots
-
-- [ ] Capture `api-health.png`
-- [ ] Capture `events-summary.png`
+Every path above exists in the repository after ZS-4. Terminal captures with stale private-machine paths, obsolete Phase 9 evidence, or redundant content were removed rather than presented as current verification.
