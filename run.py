@@ -222,6 +222,16 @@ MAX_REQUEST_BYTES_ENV_VAR = "ZEROSOC_MAX_REQUEST_BYTES"
 DEFAULT_MAX_REQUEST_BYTES = 65536        # 64 KiB, in bytes
 MAX_REQUEST_BYTES_CEILING = 1048576      # 1 MiB hard upper bound, in bytes
 
+# The declared Content-Length is bounded *textually* before any int()
+# conversion. Any all-digit value whose significant digits (leading zeros
+# stripped) are wider than the 1 MiB ceiling is necessarily larger than any
+# permitted body, so it is a 413 without ever converting an attacker-controlled
+# decimal string to int. Python 3.13 refuses to convert a decimal string past
+# sys.get_int_max_str_digits() (default 4300), raising ValueError; this bound
+# keeps a hostile multi-thousand-digit header from reaching int() at all and
+# never depends on that interpreter setting.
+MAX_CONTENT_LENGTH_DIGITS = len(str(MAX_REQUEST_BYTES_CEILING))  # 7 digits
+
 # The single JSON media type this API accepts on writing endpoints. An
 # optional charset parameter (e.g. "application/json; charset=utf-8") is
 # tolerated; any other media type is rejected with 415.
@@ -4888,7 +4898,23 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise RequestValidationError(400, "Invalid Content-Length header")
 
-        content_length = int(raw_length)
+        # 3a. Bound the declared length *textually* before converting it. Leading
+        #     zeros are stripped (they carry no magnitude but still count toward
+        #     Python's int_max_str_digits limit); if the remaining significant
+        #     digits are wider than the 1 MiB ceiling, the value is necessarily
+        #     larger than any permitted body, so it is rejected as an oversized
+        #     payload *before* int() ever sees an attacker-controlled, arbitrarily
+        #     long decimal string (which Python 3.13 would refuse with ValueError).
+        significant_digits = raw_length.lstrip("0")
+        if len(significant_digits) > MAX_CONTENT_LENGTH_DIGITS:
+            self.close_connection = True
+            raise RequestValidationError(
+                413, "Request body exceeds the maximum allowed size"
+            )
+
+        # int() now only ever sees the bounded significant digits, so the
+        # conversion is guaranteed to stay well under the interpreter limit.
+        content_length = int(significant_digits) if significant_digits else 0
 
         # 4. Reject an oversized declared body before reading it.
         if content_length > max_bytes:

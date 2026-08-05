@@ -2414,6 +2414,116 @@ class ZeroSOCRequestSizeTests(ZeroSOCPostIntegrationTestCase):
             self.assert_clean_error(response)
             self.assertEqual(self.count_events(), 0)
 
+    # -- ZS-3.1: extreme numeric Content-Length hardening ----------------
+    #
+    # A syntactically all-digit Content-Length can be made thousands of digits
+    # long. Before this hardening the digit-format check passed and int() was
+    # then handed the raw string, which Python 3.13 refuses past its
+    # int_max_str_digits limit (default 4300), raising an uncaught ValueError
+    # that escaped the JSON error contract. The handler must instead bound the
+    # textual length and return a controlled response without ever converting
+    # the hostile string.
+
+    @staticmethod
+    def _json_body_of(raw):
+        """Extract and parse the JSON body from a raw HTTP reply."""
+        _, _, body = raw.partition(b"\r\n\r\n")
+        return json.loads(body.decode("utf-8"))
+
+    def test_extreme_numeric_content_length_is_rejected_without_conversion_error(self):
+        # ~5000 all-digit characters -- well past Python 3.13's 4300-digit
+        # conversion limit. No large body is sent; the rejection must rest on
+        # the declared length alone and must not attempt int() on the string.
+        hostile_length = "9" * 5000
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                f"Content-Length: {hostile_length}",
+            ])
+            status, raw, closed = self.raw_exchange(
+                request, send_body=b"{}", read_timeout=5
+            )
+
+            # Controlled, prompt HTTP response (read_timeout would fire on a
+            # hang) -- an oversized declared size is a 413 under the ZS-3
+            # contract, and the framing rejection closes the connection.
+            self.assertEqual(status, 413)
+            self.assertTrue(closed)
+
+            # Body is valid JSON with the fixed, client-safe error envelope.
+            payload = self._json_body_of(raw)
+            self.assertFalse(payload["success"])
+            self.assertIsNone(payload["data"])
+            self.assertIsInstance(payload["error"]["message"], str)
+
+            # The hostile header value is never echoed, and neither the
+            # interpreter's conversion error nor any traceback leaks.
+            self.assertNotIn(hostile_length.encode(), raw)
+            self.assertNotIn(b"9" * 100, raw)
+            for token in (b"Traceback", b"ValueError",
+                          b"Exceeds the limit", b"int_max_str_digits"):
+                self.assertNotIn(token, raw)
+
+            # No protected operation ran; no record was created.
+            self.assertEqual(self.count_events(), 0)
+
+    def test_leading_zero_padded_extreme_length_does_not_reach_int_conversion(self):
+        # Leading zeros carry no magnitude but DO count toward Python's
+        # conversion limit, so a zero-padded string longer than the limit would
+        # still crash a naive int(). Here the significant digits ("99999") are
+        # oversized, so the request is a clean 413 -- proving int() only ever
+        # saw the stripped significant digits, never the padded string.
+        padded_length = "0" * 5000 + "99999"
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                f"Content-Length: {padded_length}",
+            ])
+            status, raw, closed = self.raw_exchange(
+                request, send_body=b"{}", read_timeout=5
+            )
+            self.assertEqual(status, 413)
+            self.assertTrue(closed)
+            for token in (b"Traceback", b"Exceeds the limit"):
+                self.assertNotIn(token, raw)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_content_length_digit_boundary_is_classified_as_413(self):
+        # Values on either side of the textual digit bound must both resolve to
+        # 413 (oversized), not 400 or an internal error: a 7-digit value routes
+        # through int() and fails the > max_bytes check, while an 8-digit value
+        # is rejected on the digit bound itself before int(). Consistent
+        # classification across the boundary.
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            for declared in ("1048576", "99999999"):  # 7 digits, then 8 digits
+                request = self.build_raw_request([
+                    "Content-Type: application/json",
+                    f"Content-Length: {declared}",
+                ])
+                status, raw, closed = self.raw_exchange(
+                    request, send_body=b"{}", read_timeout=5
+                )
+                self.assertEqual(status, 413, f"declared={declared}")
+                self.assertTrue(closed, f"declared={declared}")
+                self.assertNotIn(b"Traceback", raw)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_leading_zero_content_length_within_limit_is_accepted(self):
+        # Established parser behavior tolerates leading zeros ("0000512" == 512).
+        # The textual bound must not disturb that: a zero-padded, in-limit,
+        # valid body is still accepted and processed normally.
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            body = self.make_event_body(512)
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                f"Content-Length: {'000' + str(len(body))}",  # 512 -> "000512"
+            ])
+            status, raw, closed = self.raw_exchange(
+                request, send_body=body, read_timeout=5
+            )
+            self.assertEqual(status, 201)
+            self.assertEqual(self.count_events(), 1)
+
 
 class ZeroSOCRequestFramingTests(ZeroSOCPostIntegrationTestCase):
     """Content-Length / Transfer-Encoding framing hardening (raw sockets)."""
