@@ -1,10 +1,13 @@
 import json
 import csv
+import http.client
 import io
 import os
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta
+from http.server import HTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -1524,6 +1527,497 @@ class ZeroSOCSecurityHardeningTests(unittest.TestCase):
                 ),
                 "http://a.test:5500",
             )
+
+
+# =========================================================================
+# ZS-2: HTTP/Auth integration coverage at the real handler boundary
+# =========================================================================
+#
+# These tests exercise the actual ``run.ZeroSOCHandler`` request path -- socket
+# read, header parsing, ``do_GET``/``do_OPTIONS`` dispatch, ``normalize_route``,
+# ``requires_auth`` + ``is_authorized`` enforcement, the ``end_headers`` CORS
+# injection, and JSON response serialization -- rather than calling helper
+# functions in isolation.
+#
+# Boundary exercised: a real loopback ``http.server.HTTPServer`` bound to
+# ``127.0.0.1`` on an ephemeral OS-assigned port (``0``), driven with the
+# standard-library ``http.client``. The server is started directly (bypassing
+# ``run_server``) so no configuration is read at startup, and it is shut down
+# deterministically via ``addCleanup``.
+#
+# Isolation:
+#   * ``run.get_system_info`` is patched to a synthetic, host-independent dict.
+#     It also doubles as a reach-marker: for authorized requests it must be
+#     called; for unauthorized requests it must NOT be called, proving the
+#     protected operation was never executed.
+#   * ``run.log_request`` is patched out so no request touches the production
+#     request log file or SQLite database.
+#   * ``run.ZeroSOCHandler.log_message`` is silenced to keep stderr clean.
+#   * ``run.DATA_DIR``/``run.DB_FILE`` are pointed at a throwaway temp dir as a
+#     defensive guard against any incidental persistence.
+#   * Environment (API key, allowed origins) is patched per test with
+#     ``mock.patch.dict(..., clear=True)``, guaranteeing restoration and
+#     guaranteeing the developer's real API key is never used.
+#
+# No test opens an external connection, binds a LAN interface, scans a network,
+# or contacts a webhook.
+
+# Unmistakably test-only credentials and origins -- never the real secret.
+INTEGRATION_API_KEY = "zs2-integration-test-key-not-a-real-secret"
+INTEGRATION_WRONG_KEY = "zs2-integration-wrong-key-also-not-real"
+ALLOWED_ORIGIN = "https://allowed.zs2.test"
+DISALLOWED_ORIGIN = "https://disallowed.zs2.test"
+
+SYNTHETIC_SYSTEM_INFO = {
+    "hostname": "synthetic-zs2-test-host",
+    "platform": "synthetic-test-os",
+    "marker": "zs2-synthetic-system-info",
+}
+
+PROTECTED_SYSTEM_ROUTES = ("/system", "/api/v1/system")
+
+# Route forms proving trailing slashes and query strings never bypass auth.
+PROTECTED_ROUTE_VARIANTS = (
+    "/system",
+    "/system/",
+    "/system?view=summary",
+    "/system/?view=summary",
+    "/api/v1/system",
+    "/api/v1/system/",
+    "/api/v1/system?view=summary",
+    "/api/v1/system/?view=summary",
+)
+
+# Documented public aliases that must stay reachable without a key.
+PUBLIC_ROUTE_VARIANTS = (
+    "/health",
+    "/health/",
+    "/health?probe=1",
+    "/api/v1/health",
+    "/api/v1/health/",
+    "/status",
+    "/status/",
+    "/status?probe=1",
+    "/api/v1/status",
+    "/api/v1/status/",
+)
+
+
+class _CapturedResponse:
+    """A minimal, case-insensitive view over a captured HTTP response."""
+
+    def __init__(self, status, header_pairs, body):
+        self.status = status
+        self.header_pairs = list(header_pairs)
+        self.body = body
+
+    def get_header(self, name):
+        lowered = name.lower()
+        for key, value in self.header_pairs:
+            if key.lower() == lowered:
+                return value
+        return None
+
+    def has_header(self, name):
+        return self.get_header(name) is not None
+
+    def json(self):
+        return json.loads(self.body)
+
+
+class ZeroSOCHandlerIntegrationTestCase(unittest.TestCase):
+    """Shared loopback-server harness for real handler-boundary tests."""
+
+    def setUp(self):
+        # Defensive persistence isolation: point data/DB at a throwaway dir so
+        # no request can touch the production database even incidentally.
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+
+        original_data_dir = run.DATA_DIR
+        original_db_file = run.DB_FILE
+        run.DATA_DIR = self._temp_dir.name
+        run.DB_FILE = str(Path(self._temp_dir.name) / "zs2-integration.db")
+
+        def _restore_paths():
+            run.DATA_DIR = original_data_dir
+            run.DB_FILE = original_db_file
+
+        self.addCleanup(_restore_paths)
+
+        # Host isolation + reach marker.
+        system_patcher = mock.patch.object(
+            run, "get_system_info", return_value=dict(SYNTHETIC_SYSTEM_INFO)
+        )
+        self.mock_system_info = system_patcher.start()
+        self.addCleanup(system_patcher.stop)
+
+        # No production log file / DB writes for any request under test.
+        log_patcher = mock.patch.object(run, "log_request")
+        self.mock_log_request = log_patcher.start()
+        self.addCleanup(log_patcher.stop)
+
+        # Silence BaseHTTPRequestHandler's stderr logging without altering the
+        # real request-handling behavior.
+        message_patcher = mock.patch.object(
+            run.ZeroSOCHandler, "log_message", lambda *args, **kwargs: None
+        )
+        message_patcher.start()
+        self.addCleanup(message_patcher.stop)
+
+        # Real handler, real socket, loopback only, ephemeral port.
+        self.server = HTTPServer(("127.0.0.1", 0), run.ZeroSOCHandler)
+        self.port = self.server.server_address[1]
+        self.server_thread = threading.Thread(
+            target=self.server.serve_forever, daemon=True
+        )
+        self.server_thread.start()
+        self.addCleanup(self._stop_server)
+
+    def _stop_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.server_thread.join(timeout=5)
+
+    def request(self, method, path, api_key=None, origin=None, extra_headers=None):
+        """Issue a real request to the loopback handler and capture the reply."""
+        headers = dict(extra_headers or {})
+        if api_key is not None:
+            headers[run.API_KEY_HEADER] = api_key
+        if origin is not None:
+            headers["Origin"] = origin
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            connection.request(method, path, headers=headers)
+            response = connection.getresponse()
+            body = response.read().decode("utf-8")
+            return _CapturedResponse(response.status, response.getheaders(), body)
+        finally:
+            connection.close()
+
+    # -- shared assertion helpers ----------------------------------------
+
+    def assert_reached_system_handler(self, response):
+        self.assertEqual(response.status, 200)
+        payload = response.json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["status_code"], 200)
+        self.assertEqual(payload["data"], SYNTHETIC_SYSTEM_INFO)
+        self.assertEqual(self.mock_system_info.call_count, 1)
+
+    def assert_unauthorized_and_operation_skipped(self, response):
+        self.assertEqual(response.status, 401)
+        payload = response.json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["status_code"], 401)
+        self.assertEqual(payload["error"]["message"], "Missing or invalid API key")
+        # The protected operation must never have run.
+        self.mock_system_info.assert_not_called()
+        # The response must not disclose the configured key, echo the supplied
+        # key, or leak environment/internal exception detail.
+        self.assertNotIn(INTEGRATION_API_KEY, response.body)
+        self.assertNotIn(INTEGRATION_WRONG_KEY, response.body)
+        self.assertNotIn("ZEROSOC_API_KEY", response.body)
+        self.assertNotIn("Traceback", response.body)
+
+    def assert_no_cors_origin(self, response):
+        self.assertIsNone(response.get_header("Access-Control-Allow-Origin"))
+
+    def assert_cors_origin(self, response, origin):
+        self.assertEqual(
+            response.get_header("Access-Control-Allow-Origin"), origin
+        )
+        self.assertEqual(response.get_header("Vary"), "Origin")
+
+    def assert_no_permissive_cors(self, response):
+        origin_header = response.get_header("Access-Control-Allow-Origin")
+        self.assertNotEqual(origin_header, "*")
+        self.assertFalse(response.has_header("Access-Control-Allow-Credentials"))
+        self.assertFalse(
+            response.has_header("Access-Control-Allow-Private-Network")
+        )
+
+
+class ZeroSOCHandlerAuthIntegrationTests(ZeroSOCHandlerIntegrationTestCase):
+    """API-key authentication enforced at the real request handler."""
+
+    def test_missing_key_on_protected_route_is_unauthorized(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            for route in PROTECTED_SYSTEM_ROUTES:
+                with self.subTest(route=route):
+                    self.mock_system_info.reset_mock()
+                    response = self.request("GET", route)
+                    self.assert_unauthorized_and_operation_skipped(response)
+
+    def test_incorrect_key_on_protected_route_is_unauthorized(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            for route in PROTECTED_SYSTEM_ROUTES:
+                with self.subTest(route=route):
+                    self.mock_system_info.reset_mock()
+                    response = self.request(
+                        "GET", route, api_key=INTEGRATION_WRONG_KEY
+                    )
+                    self.assert_unauthorized_and_operation_skipped(response)
+
+    def test_correct_key_reaches_protected_system_handler(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            for route in PROTECTED_SYSTEM_ROUTES:
+                with self.subTest(route=route):
+                    self.mock_system_info.reset_mock()
+                    response = self.request(
+                        "GET", route, api_key=INTEGRATION_API_KEY
+                    )
+                    self.assert_reached_system_handler(response)
+
+    def test_protected_route_matrix_normalization(self):
+        """Trailing slashes and query strings never change the auth decision."""
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            for path in PROTECTED_ROUTE_VARIANTS:
+                with self.subTest(path=path, case="missing-key"):
+                    self.mock_system_info.reset_mock()
+                    self.assert_unauthorized_and_operation_skipped(
+                        self.request("GET", path)
+                    )
+
+                with self.subTest(path=path, case="incorrect-key"):
+                    self.mock_system_info.reset_mock()
+                    self.assert_unauthorized_and_operation_skipped(
+                        self.request("GET", path, api_key=INTEGRATION_WRONG_KEY)
+                    )
+
+                with self.subTest(path=path, case="correct-key"):
+                    self.mock_system_info.reset_mock()
+                    self.assert_reached_system_handler(
+                        self.request("GET", path, api_key=INTEGRATION_API_KEY)
+                    )
+
+    def test_fail_closed_when_server_key_unconfigured(self):
+        """No configured server key => every request fails closed with 401."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            for route in PROTECTED_SYSTEM_ROUTES:
+                with self.subTest(route=route):
+                    self.mock_system_info.reset_mock()
+                    # Even a plausible client key cannot authorize when the
+                    # server has no key configured.
+                    response = self.request(
+                        "GET", route, api_key=INTEGRATION_API_KEY
+                    )
+                    self.assert_unauthorized_and_operation_skipped(response)
+
+    def test_fail_closed_when_server_key_blank(self):
+        """A whitespace-only server key is treated as unconfigured (401)."""
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": "   "}, clear=True
+        ):
+            for route in PROTECTED_SYSTEM_ROUTES:
+                with self.subTest(route=route):
+                    self.mock_system_info.reset_mock()
+                    response = self.request(
+                        "GET", route, api_key=INTEGRATION_API_KEY
+                    )
+                    self.assert_unauthorized_and_operation_skipped(response)
+
+    def test_unauthorized_response_is_valid_json_and_leaks_nothing(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            response = self.request(
+                "GET", "/api/v1/system", api_key=INTEGRATION_WRONG_KEY
+            )
+            self.assertEqual(response.status, 401)
+            self.assertEqual(
+                response.get_header("Content-Type"), "application/json"
+            )
+            # Valid JSON with the established contract, disclosing no secret.
+            payload = response.json()
+            self.assertEqual(
+                payload["error"]["message"], "Missing or invalid API key"
+            )
+            self.assertIsNone(payload["data"])
+            self.assertNotIn(INTEGRATION_API_KEY, response.body)
+            self.assertNotIn(INTEGRATION_WRONG_KEY, response.body)
+
+    def test_public_alias_routes_remain_public(self):
+        """Documented health/status aliases stay reachable with no key."""
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            for path in PUBLIC_ROUTE_VARIANTS:
+                with self.subTest(path=path):
+                    response = self.request("GET", path)
+                    self.assertEqual(
+                        response.status, 200, msg=f"{path} should be public"
+                    )
+                    payload = response.json()
+                    self.assertTrue(payload["success"])
+                    self.assertEqual(payload["data"]["status"], "ok")
+
+    def test_public_access_does_not_expand_to_protected_routes(self):
+        """A missing key stays public for aliases yet protected for /system."""
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": INTEGRATION_API_KEY}, clear=True
+        ):
+            self.assertEqual(self.request("GET", "/health").status, 200)
+            self.mock_system_info.reset_mock()
+            self.assert_unauthorized_and_operation_skipped(
+                self.request("GET", "/system")
+            )
+
+
+class ZeroSOCHandlerCorsIntegrationTests(ZeroSOCHandlerIntegrationTestCase):
+    """CORS response behavior through the real ``end_headers`` path."""
+
+    def _cors_env(self):
+        return mock.patch.dict(
+            os.environ,
+            {
+                "ZEROSOC_API_KEY": INTEGRATION_API_KEY,
+                "ZEROSOC_ALLOWED_ORIGINS": ALLOWED_ORIGIN,
+            },
+            clear=True,
+        )
+
+    def test_allowed_origin_is_reflected_with_vary(self):
+        with self._cors_env():
+            response = self.request("GET", "/health", origin=ALLOWED_ORIGIN)
+            self.assert_cors_origin(response, ALLOWED_ORIGIN)
+            self.assert_no_permissive_cors(response)
+
+    def test_disallowed_origin_is_not_reflected(self):
+        with self._cors_env():
+            response = self.request("GET", "/health", origin=DISALLOWED_ORIGIN)
+            self.assert_no_cors_origin(response)
+            self.assert_no_permissive_cors(response)
+
+    def test_no_origin_header_receives_no_cors_grant(self):
+        with self._cors_env():
+            response = self.request("GET", "/health")
+            self.assert_no_cors_origin(response)
+            self.assert_no_permissive_cors(response)
+
+    def test_lookalike_origins_are_rejected(self):
+        lookalikes = (
+            ALLOWED_ORIGIN + ".attacker.test",   # suffix expansion
+            "https://x" + ALLOWED_ORIGIN[len("https://"):],  # prefix expansion
+            ALLOWED_ORIGIN + "/",                 # trailing slash
+            "http://allowed.zs2.test",            # scheme mismatch
+            "null",                               # opaque origin
+        )
+        with self._cors_env():
+            for origin in lookalikes:
+                with self.subTest(origin=origin):
+                    response = self.request("GET", "/health", origin=origin)
+                    self.assert_no_cors_origin(response)
+                    self.assert_no_permissive_cors(response)
+
+    def test_credentials_and_private_network_are_never_granted(self):
+        with self._cors_env():
+            for origin in (ALLOWED_ORIGIN, DISALLOWED_ORIGIN, None):
+                with self.subTest(origin=origin):
+                    response = self.request("GET", "/health", origin=origin)
+                    self.assert_no_permissive_cors(response)
+
+    def test_auth_failure_is_not_more_permissive_than_success(self):
+        with self._cors_env():
+            success = self.request("GET", "/health", origin=ALLOWED_ORIGIN)
+            self.mock_system_info.reset_mock()
+            failure = self.request(
+                "GET",
+                "/api/v1/system",
+                origin=ALLOWED_ORIGIN,
+                api_key=INTEGRATION_WRONG_KEY,
+            )
+            self.assertEqual(failure.status, 401)
+            self.mock_system_info.assert_not_called()
+            # The 401 grants the same (allow-listed) origin and nothing more.
+            self.assertEqual(
+                failure.get_header("Access-Control-Allow-Origin"),
+                success.get_header("Access-Control-Allow-Origin"),
+            )
+            self.assert_no_permissive_cors(failure)
+
+
+class ZeroSOCHandlerOptionsIntegrationTests(ZeroSOCHandlerIntegrationTestCase):
+    """OPTIONS / preflight behavior through the real handler."""
+
+    def _cors_env(self):
+        return mock.patch.dict(
+            os.environ,
+            {
+                "ZEROSOC_API_KEY": INTEGRATION_API_KEY,
+                "ZEROSOC_ALLOWED_ORIGINS": ALLOWED_ORIGIN,
+            },
+            clear=True,
+        )
+
+    def test_allowed_origin_preflight_returns_conservative_headers(self):
+        with self._cors_env():
+            response = self.request(
+                "OPTIONS", "/api/v1/system", origin=ALLOWED_ORIGIN
+            )
+            self.assertEqual(response.status, 204)
+            self.assert_cors_origin(response, ALLOWED_ORIGIN)
+            self.assertEqual(
+                response.get_header("Access-Control-Allow-Methods"),
+                "GET, POST, OPTIONS",
+            )
+            self.assertEqual(
+                response.get_header("Access-Control-Allow-Headers"),
+                "Content-Type, X-API-Key",
+            )
+            self.assert_no_permissive_cors(response)
+            # Preflight must never execute the protected operation or leak keys.
+            self.mock_system_info.assert_not_called()
+            self.assertNotIn(INTEGRATION_API_KEY, response.body)
+
+    def test_disallowed_origin_preflight_is_not_reflected(self):
+        with self._cors_env():
+            response = self.request(
+                "OPTIONS", "/api/v1/system", origin=DISALLOWED_ORIGIN
+            )
+            self.assertEqual(response.status, 204)
+            self.assert_no_cors_origin(response)
+            self.assert_no_permissive_cors(response)
+
+    def test_no_origin_preflight_gains_no_allowance(self):
+        with self._cors_env():
+            response = self.request("OPTIONS", "/api/v1/system")
+            self.assertEqual(response.status, 204)
+            self.assert_no_cors_origin(response)
+            self.assert_no_permissive_cors(response)
+
+    def test_preflight_is_coherent_across_route_variants(self):
+        variants = (
+            "/api/v1/system",
+            "/api/v1/system/",
+            "/api/v1/system?view=summary",
+        )
+        with self._cors_env():
+            for path in variants:
+                with self.subTest(path=path):
+                    allowed = self.request(
+                        "OPTIONS", path, origin=ALLOWED_ORIGIN
+                    )
+                    self.assertEqual(allowed.status, 204)
+                    self.assert_cors_origin(allowed, ALLOWED_ORIGIN)
+                    self.assert_no_permissive_cors(allowed)
+                    self.mock_system_info.assert_not_called()
+
+                    denied = self.request(
+                        "OPTIONS", path, origin=DISALLOWED_ORIGIN
+                    )
+                    self.assertEqual(denied.status, 204)
+                    self.assert_no_cors_origin(denied)
+                    self.assert_no_permissive_cors(denied)
 
 
 if __name__ == "__main__":
