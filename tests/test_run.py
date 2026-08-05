@@ -2513,6 +2513,20 @@ class ZeroSOCRequestFramingTests(ZeroSOCPostIntegrationTestCase):
             self.assertTrue(closed)
             self.assertEqual(self.count_events(), 0)
 
+    def test_truncated_valid_json_is_rejected_without_side_effects(self):
+        # A short read must be rejected even when the received prefix happens
+        # to be independently valid JSON; declared framing is authoritative.
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: 10",
+            ])
+            status, raw, closed = self.raw_exchange(request, send_body=b"{}")
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertIn(b'"message": "Request body is incomplete"', raw)
+            self.assertEqual(self.count_events(), 0)
+
     def test_rejected_request_closes_connection_and_is_not_reinterpreted(self):
         # A framing rejection must close the connection so trailing bytes are
         # never misread as a second request. We pipeline a valid-looking second

@@ -4904,6 +4904,10 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         # 6. Read exactly the declared (bounded) number of bytes.
         body_bytes = self.rfile.read(content_length)
 
+        if len(body_bytes) != content_length:
+            self.close_connection = True
+            raise RequestValidationError(400, "Request body is incomplete")
+
         # 7. Require the JSON media type (charset parameter tolerated). Checked
         #    after the bounded read so the connection stays reusable.
         content_type = headers.get("Content-Type", "") or ""
