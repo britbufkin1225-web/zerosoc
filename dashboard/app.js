@@ -1,5 +1,129 @@
 const API_BASE_URL = "http://localhost:8000";
-const API_KEY = "dev-zero-soc-key";
+
+// The API key is provided by the user at runtime and is never committed to
+// source or placed in the URL. By default it is kept only in memory; the user
+// can opt in to sessionStorage (this tab) or, explicitly, localStorage
+// (persists across restarts). The key is never written to the console.
+const API_KEY_STORAGE_KEY = "zerosoc_api_key";
+let apiKey = readStoredApiKey();
+
+function readStoredApiKey() {
+    try {
+        const sessionKey = sessionStorage.getItem(API_KEY_STORAGE_KEY);
+        if (sessionKey && sessionKey.trim()) {
+            return sessionKey.trim();
+        }
+
+        const localKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+        if (localKey && localKey.trim()) {
+            return localKey.trim();
+        }
+    } catch (error) {
+        // Web storage can be unavailable (e.g. blocked in some contexts).
+        // Fall back to in-memory handling.
+    }
+
+    return "";
+}
+
+function persistApiKey(key) {
+    let rememberForSession = false;
+    try {
+        rememberForSession = window.confirm(
+            "Remember this API key for the current browser session?\n\n" +
+            "OK = keep it for this tab session (sessionStorage).\n" +
+            "Cancel = keep it only in memory until you reload."
+        );
+    } catch (error) {
+        rememberForSession = false;
+    }
+
+    if (!rememberForSession) {
+        // Memory-only is an explicit retention choice. Remove any older
+        // persisted value so it cannot silently return after a reload.
+        try {
+            sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+            localStorage.removeItem(API_KEY_STORAGE_KEY);
+        } catch (error) {
+            // Web storage may be unavailable; the new key remains in memory.
+        }
+        return;
+    }
+
+    try {
+        sessionStorage.setItem(API_KEY_STORAGE_KEY, key);
+    } catch (error) {
+        return;
+    }
+
+    let persistAcrossRestarts = false;
+    try {
+        persistAcrossRestarts = window.confirm(
+            "Also keep this key after the browser is closed (localStorage)?\n\n" +
+            "This is less secure and is off by default.\n" +
+            "OK = persist across restarts.\n" +
+            "Cancel = session only."
+        );
+    } catch (error) {
+        persistAcrossRestarts = false;
+    }
+
+    if (persistAcrossRestarts) {
+        try {
+            localStorage.setItem(API_KEY_STORAGE_KEY, key);
+        } catch (error) {
+            // Ignore: session storage above is still in effect.
+        }
+    } else {
+        // Session-only is also an explicit retention choice. Clear any older
+        // durable value rather than allowing it to reappear next session.
+        try {
+            localStorage.removeItem(API_KEY_STORAGE_KEY);
+        } catch (error) {
+            // Ignore: session storage above is still in effect.
+        }
+    }
+}
+
+function promptForApiKey() {
+    let entered = null;
+    try {
+        entered = window.prompt(
+            "Enter your ZeroSOC API key (sent as the X-API-Key header).\n" +
+            "Leave blank to cancel."
+        );
+    } catch (error) {
+        entered = null;
+    }
+
+    if (entered === null) {
+        return "";
+    }
+
+    const trimmed = entered.trim();
+    if (!trimmed) {
+        return "";
+    }
+
+    apiKey = trimmed;
+    persistApiKey(trimmed);
+    return trimmed;
+}
+
+function requireApiKey() {
+    if (apiKey && apiKey.trim()) {
+        return apiKey.trim();
+    }
+
+    const entered = promptForApiKey();
+    if (entered) {
+        return entered;
+    }
+
+    throw new Error(
+        "No ZeroSOC API key configured. Reload and enter the X-API-Key value to load data."
+    );
+}
 
 const systemStatus = document.getElementById("systemStatus");
 const metricsStatus = document.getElementById("metricsStatus");
@@ -60,9 +184,10 @@ let severityChartInstance = null;
 let eventTypeChartInstance = null;
 
 async function fetchApi(endpoint) {
+    const key = requireApiKey();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: {
-            "X-API-Key": API_KEY
+            "X-API-Key": key
         }
     });
 
@@ -74,11 +199,12 @@ async function fetchApi(endpoint) {
 }
 
 async function postApi(endpoint, payload) {
+    const key = requireApiKey();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
-            "X-API-Key": API_KEY
+            "X-API-Key": key
         },
         body: JSON.stringify(payload)
     });
@@ -91,9 +217,10 @@ async function postApi(endpoint, payload) {
 }
 
 async function fetchFile(endpoint) {
+    const key = requireApiKey();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: {
-            "X-API-Key": API_KEY
+            "X-API-Key": key
         }
     });
 
@@ -105,9 +232,10 @@ async function fetchFile(endpoint) {
 }
 
 async function fetchText(endpoint) {
+    const key = requireApiKey();
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: {
-            "X-API-Key": API_KEY
+            "X-API-Key": key
         }
     });
 

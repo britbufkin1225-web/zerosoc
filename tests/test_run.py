@@ -1,10 +1,12 @@
 import json
 import csv
 import io
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 import run
 
@@ -1371,6 +1373,157 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 self.assertEqual(rows[0]["overdue_alerts"], "1")
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
+
+
+class ZeroSOCSecurityHardeningTests(unittest.TestCase):
+    """ZS-1 secrets and network exposure hardening regression tests."""
+
+    TEST_KEY = "unit-test-only-key-not-a-real-secret"
+    OTHER_KEY = "a-different-unit-test-key"
+
+    def test_missing_api_key_configuration_is_rejected(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(run.ConfigurationError):
+                run.get_configured_api_key()
+
+    def test_blank_api_key_configuration_is_rejected(self):
+        with mock.patch.dict(os.environ, {"ZEROSOC_API_KEY": "   "}, clear=True):
+            with self.assertRaises(run.ConfigurationError):
+                run.get_configured_api_key()
+
+    def test_configured_api_key_is_accepted(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": f"  {self.TEST_KEY}  "}, clear=True
+        ):
+            self.assertEqual(run.get_configured_api_key(), self.TEST_KEY)
+
+    def test_configuration_error_is_guidance_only(self):
+        # The error message must be fixed guidance and never interpolate the
+        # raw (secret) environment value, so it is identical regardless of the
+        # rejected input.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(run.ConfigurationError) as unset_ctx:
+                run.get_configured_api_key()
+
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": "  \t \n"}, clear=True
+        ):
+            with self.assertRaises(run.ConfigurationError) as blank_ctx:
+                run.get_configured_api_key()
+
+        self.assertEqual(str(unset_ctx.exception), str(blank_ctx.exception))
+        self.assertIn("ZEROSOC_API_KEY", str(unset_ctx.exception))
+
+    def test_is_authorized_rejects_missing_header(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": self.TEST_KEY}, clear=True
+        ):
+            self.assertFalse(run.is_authorized({}))
+
+    def test_is_authorized_rejects_incorrect_key(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": self.TEST_KEY}, clear=True
+        ):
+            headers = {run.API_KEY_HEADER: self.OTHER_KEY}
+            self.assertFalse(run.is_authorized(headers))
+
+    def test_is_authorized_accepts_correct_key(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_API_KEY": self.TEST_KEY}, clear=True
+        ):
+            headers = {run.API_KEY_HEADER: self.TEST_KEY}
+            self.assertTrue(run.is_authorized(headers))
+
+    def test_is_authorized_fails_closed_without_configured_key(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            headers = {run.API_KEY_HEADER: self.TEST_KEY}
+            self.assertFalse(run.is_authorized(headers))
+
+    def test_requires_auth_protects_bare_system_endpoint(self):
+        self.assertTrue(
+            run.ZeroSOCHandler.requires_auth(None, "/system")
+        )
+        self.assertTrue(
+            run.ZeroSOCHandler.requires_auth(None, "/api/v1/system")
+        )
+
+    def test_public_health_and_status_routes_remain_public(self):
+        for endpoint in [
+            "/health",
+            "/status",
+            "/api/v1/health",
+            "/api/v1/status",
+        ]:
+            self.assertFalse(
+                run.ZeroSOCHandler.requires_auth(None, endpoint),
+                msg=f"{endpoint} should remain public",
+            )
+
+    def test_default_host_resolves_to_localhost(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(run.get_configured_host(), "127.0.0.1")
+
+    def test_blank_host_resolves_to_localhost(self):
+        with mock.patch.dict(os.environ, {"ZEROSOC_HOST": "  "}, clear=True):
+            self.assertEqual(run.get_configured_host(), "127.0.0.1")
+
+    def test_explicit_host_configuration_is_respected(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_HOST": "0.0.0.0"}, clear=True
+        ):
+            self.assertEqual(run.get_configured_host(), "0.0.0.0")
+
+    def test_cors_defaults_do_not_use_wildcard_origin(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertNotIn("*", run.get_allowed_origins())
+
+            # An untrusted or wildcard origin receives no CORS grant.
+            self.assertEqual(run.build_cors_headers("*"), {})
+            self.assertEqual(run.build_cors_headers("http://evil.example"), {})
+
+            allowed = run.build_cors_headers("http://localhost:5500")
+            self.assertEqual(
+                allowed.get("Access-Control-Allow-Origin"),
+                "http://localhost:5500",
+            )
+            self.assertNotEqual(
+                allowed.get("Access-Control-Allow-Origin"), "*"
+            )
+
+    def test_private_network_access_is_not_granted_unconditionally(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            for origin in [
+                None,
+                "*",
+                "http://localhost:5500",
+                "http://evil.example",
+            ]:
+                self.assertNotIn(
+                    "Access-Control-Allow-Private-Network",
+                    run.build_cors_headers(origin),
+                )
+
+    def test_no_origin_header_receives_no_cors_headers(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(run.build_cors_headers(None), {})
+
+    def test_configured_allowed_origins_are_parsed(self):
+        with mock.patch.dict(
+            os.environ,
+            {"ZEROSOC_ALLOWED_ORIGINS": "http://a.test:5500, http://b.test:5500 "},
+            clear=True,
+        ):
+            self.assertEqual(
+                run.get_allowed_origins(),
+                ["http://a.test:5500", "http://b.test:5500"],
+            )
+            self.assertEqual(run.build_cors_headers("http://c.test"), {})
+            self.assertEqual(
+                run.build_cors_headers("http://a.test:5500").get(
+                    "Access-Control-Allow-Origin"
+                ),
+                "http://a.test:5500",
+            )
 
 
 if __name__ == "__main__":

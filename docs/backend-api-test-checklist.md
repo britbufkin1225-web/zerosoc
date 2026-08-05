@@ -11,4 +11,4 @@ python run.py
 
 http://localhost:8000
 
-$headers = @{ "X-API-Key" = "dev-zero-soc-key" }
+$headers = @{ "X-API-Key" = "replace-with-a-long-random-secret" }

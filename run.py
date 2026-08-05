@@ -3,6 +3,7 @@ from urllib.parse import urlparse, parse_qs, unquote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import csv
+import hmac
 import html
 import io
 import json
@@ -50,10 +51,41 @@ DB_FILE = os.path.join(DATA_DIR, "zerosoc.db")
 # API Key Authentication
 # =========================
 
-API_KEY = os.getenv("ZEROSOC_API_KEY", "dev-zero-soc-key")
+API_KEY_ENV_VAR = "ZEROSOC_API_KEY"
 API_KEY_HEADER = "X-API-Key"
 
+
+class ConfigurationError(RuntimeError):
+    """Raised when required ZeroSOC configuration is missing or invalid."""
+
+
+def get_configured_api_key():
+    """
+    Reads and validates the API key from the environment.
+
+    Returns the validated key. Whitespace-only values count as missing.
+    Raises ConfigurationError when the key is absent or blank so the
+    application fails closed instead of falling back to a shipped default.
+
+    The key value itself is never logged or embedded in the error message.
+    """
+    api_key = os.getenv(API_KEY_ENV_VAR, "").strip()
+
+    if not api_key:
+        raise ConfigurationError(
+            f"{API_KEY_ENV_VAR} is not set. ZeroSOC refuses to start without a "
+            f"configured API key. Set it to a long random secret before "
+            f"starting the server.\n"
+            f"  PowerShell: $env:{API_KEY_ENV_VAR} = "
+            f'"replace-with-a-long-random-secret"\n'
+            f'  bash:       export {API_KEY_ENV_VAR}='
+            f'"replace-with-a-long-random-secret"'
+        )
+
+    return api_key
+
 PROTECTED_ENDPOINTS = {
+    "/system",
     "/api/v1/system",
     "/api/v1/logs",
     "/api/v1/logs/recent",
@@ -89,6 +121,74 @@ except ValueError:
     ALERT_NOTIFICATION_COOLDOWN_SECONDS = 900
 
 # =========================
+# Network & CORS Configuration
+# =========================
+
+HOST_ENV_VAR = "ZEROSOC_HOST"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+# Origins allowed to make cross-origin browser requests to the API. The
+# dashboard is served locally on port 5500 (see README), so those origins
+# are trusted by default. This list never contains a wildcard.
+CORS_ALLOWED_ORIGINS_ENV_VAR = "ZEROSOC_ALLOWED_ORIGINS"
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+)
+
+
+def get_configured_host():
+    """
+    Returns the host/interface the server should bind to.
+
+    Defaults to 127.0.0.1 (localhost only). Binding to 0.0.0.0 exposes the
+    service to the local network and must be requested explicitly through
+    the ZEROSOC_HOST environment variable.
+    """
+    host = os.getenv(HOST_ENV_VAR, "").strip()
+    return host or DEFAULT_HOST
+
+
+def get_allowed_origins():
+    """
+    Returns the list of origins permitted to make cross-origin requests.
+
+    Reads a comma-separated list from ZEROSOC_ALLOWED_ORIGINS when set,
+    otherwise falls back to the narrow localhost dashboard defaults. A
+    wildcard origin is never returned.
+    """
+    raw_value = os.getenv(CORS_ALLOWED_ORIGINS_ENV_VAR, "").strip()
+
+    if not raw_value:
+        return list(DEFAULT_ALLOWED_ORIGINS)
+
+    origins = [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+    return origins or list(DEFAULT_ALLOWED_ORIGINS)
+
+
+def build_cors_headers(origin):
+    """
+    Returns the CORS response headers to apply for a given request Origin.
+
+    Only origins on the configured allowlist receive CORS access, and the
+    exact requested origin is echoed back rather than a wildcard. Private
+    Network Access is never granted. Requests without an Origin header
+    (same-origin requests and non-browser clients) receive no CORS headers,
+    which is correct because CORS does not apply to them.
+    """
+    headers = {}
+
+    if origin and origin in get_allowed_origins():
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Vary"] = "Origin"
+        headers["Access-Control-Allow-Headers"] = "Content-Type, X-API-Key"
+        headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+
+    return headers
+
+
+# =========================
 # Logging Config
 # =========================
 
@@ -114,15 +214,27 @@ def is_authorized(headers):
     """
     Checks whether the request includes the correct API key.
 
+    The provided key is compared to the configured key using a constant-time
+    comparison to avoid leaking timing information. A missing header, an
+    incorrect key, or an unconfigured server key all fail authorization.
+
     Expected header:
-    X-API-Key: dev-zero-soc-key
+    X-API-Key: replace-with-a-long-random-secret
     """
     provided_key = headers.get(API_KEY_HEADER)
 
     if provided_key is None:
         return False
 
-    return provided_key == API_KEY
+    try:
+        expected_key = get_configured_api_key()
+    except ConfigurationError:
+        return False
+
+    return hmac.compare_digest(
+        provided_key.encode("utf-8"),
+        expected_key.encode("utf-8")
+    )
 
 
 # =========================
@@ -4513,10 +4625,9 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
         )
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        origin = self.headers.get("Origin")
+        for name, value in build_cors_headers(origin).items():
+            self.send_header(name, value)
         super().end_headers()
 
     def get_routes(self):
@@ -4759,12 +4870,25 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
 # =========================
 
 def run_server():
+    try:
+        get_configured_api_key()
+    except ConfigurationError as error:
+        print(f"ZeroSOC configuration error: {error}")
+        sys.exit(1)
+
     init_database()
 
-    host = "0.0.0.0"
-    port = 8000
+    host = get_configured_host()
+    port = DEFAULT_PORT
 
     server = HTTPServer((host, port), ZeroSOCHandler)
+
+    if host == "0.0.0.0":
+        print(
+            "WARNING: ZEROSOC_HOST=0.0.0.0 binds to all interfaces and exposes "
+            "ZeroSOC to your local network. Only use this on a trusted home-lab "
+            "network."
+        )
 
     print(f"{APP_NAME} backend running at http://{host}:{port}")
     print(f"SQLite database: {DB_FILE}")
