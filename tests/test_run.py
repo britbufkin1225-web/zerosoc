@@ -3,6 +3,7 @@ import csv
 import http.client
 import io
 import os
+import socket
 import tempfile
 import threading
 import unittest
@@ -2018,6 +2019,838 @@ class ZeroSOCHandlerOptionsIntegrationTests(ZeroSOCHandlerIntegrationTestCase):
                     self.assertEqual(denied.status, 204)
                     self.assert_no_cors_origin(denied)
                     self.assert_no_permissive_cors(denied)
+
+
+# =========================================================================
+# ZS-3: Request-size and general input-validation hardening
+# =========================================================================
+#
+# These tests exercise the real ``run.ZeroSOCHandler`` POST path -- the central
+# ``read_json_object_body`` validation boundary, ``do_POST`` dispatch, field
+# validation, and the JSON error contract -- against a live loopback server.
+#
+# Boundary exercised: a real ``http.server.HTTPServer`` bound to ``127.0.0.1``
+# on an ephemeral OS-assigned port (``0``), driven with ``http.client`` and, for
+# framing cases ``http.client`` cannot represent (missing/blank/duplicate/negative
+# Content-Length, bare Transfer-Encoding, truncated bodies), a small bounded raw
+# loopback socket helper with a hard read timeout so nothing blocks indefinitely.
+#
+# Isolation:
+#   * ``run.DATA_DIR``/``run.DB_FILE`` point at a throwaway temp dir and the
+#     schema is created there, so real event writes go to a disposable database
+#     and can be counted to prove invalid requests cause no side effects.
+#   * ``run.log_request`` is patched out so no request touches the production
+#     request log file or database.
+#   * ``run.ZeroSOCHandler.log_message`` is silenced to keep stderr clean.
+#   * The API key and request-size limit are set per test with
+#     ``mock.patch.dict(..., clear=True)`` using unmistakably synthetic values,
+#     so the developer's real key is never used and env state is always restored.
+#
+# No test opens an external connection, binds a LAN interface, scans a network,
+# or contacts a webhook.
+
+ZS3_API_KEY = "zs3-input-validation-test-key-not-a-real-secret"
+ZS3_WRONG_KEY = "zs3-input-validation-wrong-key-also-not-real"
+ZS3_ALLOWED_ORIGIN = "https://allowed.zs3.test"
+ZS3_DISALLOWED_ORIGIN = "https://disallowed.zs3.test"
+
+
+class ZeroSOCMaxRequestBytesConfigTests(unittest.TestCase):
+    """Configuration boundary for ZEROSOC_MAX_REQUEST_BYTES."""
+
+    def test_default_is_returned_when_unset(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                run.get_max_request_bytes(), run.DEFAULT_MAX_REQUEST_BYTES
+            )
+
+    def test_valid_positive_integer_is_accepted(self):
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_MAX_REQUEST_BYTES": "1024"}, clear=True
+        ):
+            self.assertEqual(run.get_max_request_bytes(), 1024)
+
+    def test_blank_value_falls_back_to_default(self):
+        # Blank/whitespace is treated as unset -> default, matching the
+        # established get_configured_* helper style.
+        for blank in ("", "   ", "\t"):
+            with self.subTest(value=blank):
+                with mock.patch.dict(
+                    os.environ, {"ZEROSOC_MAX_REQUEST_BYTES": blank}, clear=True
+                ):
+                    self.assertEqual(
+                        run.get_max_request_bytes(), run.DEFAULT_MAX_REQUEST_BYTES
+                    )
+
+    def test_zero_negative_and_nonnumeric_are_rejected(self):
+        for bad_value in ("0", "-1", "12.5", "abc", "0x10", "1_000"):
+            with self.subTest(value=bad_value):
+                with mock.patch.dict(
+                    os.environ,
+                    {"ZEROSOC_MAX_REQUEST_BYTES": bad_value},
+                    clear=True,
+                ):
+                    with self.assertRaises(run.ConfigurationError):
+                        run.get_max_request_bytes()
+
+    def test_value_above_ceiling_is_rejected(self):
+        over = str(run.MAX_REQUEST_BYTES_CEILING + 1)
+        with mock.patch.dict(
+            os.environ, {"ZEROSOC_MAX_REQUEST_BYTES": over}, clear=True
+        ):
+            with self.assertRaises(run.ConfigurationError):
+                run.get_max_request_bytes()
+
+    def test_config_error_does_not_leak_the_rejected_value(self):
+        secret_like = "9999999999999"  # over ceiling, stands in for a bad value
+        with mock.patch.dict(
+            os.environ,
+            {"ZEROSOC_MAX_REQUEST_BYTES": secret_like},
+            clear=True,
+        ):
+            with self.assertRaises(run.ConfigurationError) as ctx:
+                run.get_max_request_bytes()
+        message = str(ctx.exception)
+        self.assertIn("ZEROSOC_MAX_REQUEST_BYTES", message)
+        self.assertNotIn(secret_like, message)
+
+
+class ZeroSOCEventPayloadValidationUnitTests(unittest.TestCase):
+    """Unit-level coverage of the POST /api/v1/events field validator."""
+
+    def test_empty_object_fills_defaults(self):
+        fields = run.validate_create_event_payload({})
+        self.assertEqual(fields["event_type"], run.DEFAULT_EVENT_TYPE)
+        self.assertEqual(fields["severity"], run.DEFAULT_EVENT_SEVERITY)
+        self.assertEqual(fields["source"], run.DEFAULT_EVENT_SOURCE)
+        self.assertEqual(fields["message"], run.DEFAULT_EVENT_MESSAGE)
+
+    def test_valid_full_payload_is_cleaned(self):
+        fields = run.validate_create_event_payload({
+            "event_type": "  auth-failure  ",
+            "severity": "HIGH",
+            "source": " 10.0.0.5 ",
+            "message": "  Repeated failed login  ",
+            "unknown": "ignored",
+        })
+        self.assertEqual(fields["event_type"], "auth-failure")
+        self.assertEqual(fields["severity"], "high")
+        self.assertEqual(fields["source"], "10.0.0.5")
+        self.assertEqual(fields["message"], "Repeated failed login")
+
+    def test_null_fields_fall_back_to_defaults(self):
+        fields = run.validate_create_event_payload({
+            "event_type": None,
+            "severity": None,
+            "source": None,
+            "message": None,
+        })
+        self.assertEqual(fields["event_type"], run.DEFAULT_EVENT_TYPE)
+        self.assertEqual(fields["severity"], run.DEFAULT_EVENT_SEVERITY)
+
+    def test_non_string_scalar_fields_are_rejected(self):
+        for key, value in (
+            ("event_type", 5),
+            ("event_type", True),
+            ("event_type", ["x"]),
+            ("event_type", {"a": 1}),
+            ("source", 10),
+            ("message", 3.5),
+        ):
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(run.RequestValidationError) as ctx:
+                    run.validate_create_event_payload({key: value})
+                self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_blank_strings_are_rejected(self):
+        for key in ("event_type", "source", "message"):
+            with self.subTest(key=key):
+                with self.assertRaises(run.RequestValidationError):
+                    run.validate_create_event_payload({key: "   "})
+
+    def test_severity_enum_is_enforced(self):
+        for value in run.EVENT_SEVERITIES:
+            with self.subTest(value=value):
+                fields = run.validate_create_event_payload({"severity": value})
+                self.assertEqual(fields["severity"], value)
+
+        for bad in ("urgent", "SEV1", "informational", ""):
+            with self.subTest(bad=bad):
+                with self.assertRaises(run.RequestValidationError):
+                    run.validate_create_event_payload({"severity": bad})
+
+    def test_length_bounds_are_enforced(self):
+        cases = (
+            ("event_type", run.MAX_EVENT_TYPE_LENGTH),
+            ("source", run.MAX_EVENT_SOURCE_LENGTH),
+            ("message", run.MAX_EVENT_MESSAGE_LENGTH),
+        )
+        for key, max_len in cases:
+            with self.subTest(key=key, boundary="at-max"):
+                fields = run.validate_create_event_payload({key: "a" * max_len})
+                self.assertEqual(fields[key], "a" * max_len)
+
+            with self.subTest(key=key, boundary="over-max"):
+                with self.assertRaises(run.RequestValidationError):
+                    run.validate_create_event_payload({key: "a" * (max_len + 1)})
+
+    def test_non_object_root_is_rejected(self):
+        for root in ([], "x", 5, True, None):
+            with self.subTest(root=root):
+                with self.assertRaises(run.RequestValidationError):
+                    run.validate_create_event_payload(root)
+
+
+class ZeroSOCPostIntegrationTestCase(unittest.TestCase):
+    """Shared loopback-server harness for POST body-validation tests."""
+
+    def setUp(self):
+        self._temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temp_dir.cleanup)
+
+        original_data_dir = run.DATA_DIR
+        original_db_file = run.DB_FILE
+        run.DATA_DIR = self._temp_dir.name
+        run.DB_FILE = str(Path(self._temp_dir.name) / "zs3-integration.db")
+        run.init_database()
+
+        def _restore_paths():
+            run.DATA_DIR = original_data_dir
+            run.DB_FILE = original_db_file
+
+        self.addCleanup(_restore_paths)
+
+        # No production log file / DB writes for the request log.
+        log_patcher = mock.patch.object(run, "log_request")
+        self.mock_log_request = log_patcher.start()
+        self.addCleanup(log_patcher.stop)
+
+        message_patcher = mock.patch.object(
+            run.ZeroSOCHandler, "log_message", lambda *args, **kwargs: None
+        )
+        message_patcher.start()
+        self.addCleanup(message_patcher.stop)
+
+        self.server = HTTPServer(("127.0.0.1", 0), run.ZeroSOCHandler)
+        self.port = self.server.server_address[1]
+        self.server_thread = threading.Thread(
+            target=self.server.serve_forever, daemon=True
+        )
+        self.server_thread.start()
+        self.addCleanup(self._stop_server)
+
+    def _stop_server(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.server_thread.join(timeout=5)
+
+    # -- request helpers -------------------------------------------------
+
+    def post(
+        self,
+        path,
+        body,
+        api_key=ZS3_API_KEY,
+        content_type="application/json",
+        origin=None,
+        extra_headers=None,
+    ):
+        """Issue a real POST via http.client (sets Content-Length for us)."""
+        headers = dict(extra_headers or {})
+        if api_key is not None:
+            headers[run.API_KEY_HEADER] = api_key
+        if content_type is not None:
+            headers["Content-Type"] = content_type
+        if origin is not None:
+            headers["Origin"] = origin
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            connection.request("POST", path, body=body, headers=headers)
+            response = connection.getresponse()
+            response_body = response.read().decode("utf-8")
+            return _CapturedResponse(
+                response.status, response.getheaders(), response_body
+            )
+        finally:
+            connection.close()
+
+    def raw_exchange(self, request_bytes, send_body=b"", read_timeout=5):
+        """
+        Send a hand-crafted request over a raw loopback socket for framing cases
+        http.client cannot express, then read the full reply until the server
+        closes the connection. The write side is shut down after sending so a
+        deliberately short body cannot make the handler block.
+
+        Returns (status_code, raw_reply_bytes, server_closed_connection).
+        """
+        sock = socket.create_connection(("127.0.0.1", self.port), timeout=read_timeout)
+        try:
+            sock.sendall(request_bytes + send_body)
+            sock.shutdown(socket.SHUT_WR)
+
+            chunks = []
+            server_closed = False
+            while True:
+                data = sock.recv(4096)
+                if not data:
+                    server_closed = True
+                    break
+                chunks.append(data)
+
+            raw = b"".join(chunks)
+            status = None
+            if raw.startswith(b"HTTP/"):
+                try:
+                    status = int(raw.split(b"\r\n", 1)[0].split(b" ")[1])
+                except (IndexError, ValueError):
+                    status = None
+            return status, raw, server_closed
+        finally:
+            sock.close()
+
+    def build_raw_request(self, headers_lines, api_key=ZS3_API_KEY):
+        """
+        Build request-line + headers (no body) ending with a blank line.
+
+        A valid API key is included by default so framing tests reach the body
+        validation boundary rather than stopping at the auth gate; pass
+        api_key=None to omit it.
+        """
+        lines = ["POST /api/v1/events HTTP/1.1", f"Host: 127.0.0.1:{self.port}"]
+        if api_key is not None:
+            lines.append(f"{run.API_KEY_HEADER}: {api_key}")
+        lines.extend(headers_lines)
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("ascii")
+
+    # -- assertion / data helpers ----------------------------------------
+
+    def count_events(self):
+        conn = run.get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS total FROM security_events")
+            return cursor.fetchone()["total"]
+        finally:
+            conn.close()
+
+    def make_event_body(self, target_length):
+        """A valid event JSON object padded to exactly target_length bytes."""
+        prefix = b'{"event_type":"manual","pad":"'
+        suffix = b'"}'
+        pad = target_length - len(prefix) - len(suffix)
+        self.assertGreaterEqual(pad, 0, "target_length too small for a valid body")
+        return prefix + (b"a" * pad) + suffix
+
+    def assert_clean_error(self, response, *forbidden):
+        """A validation error must be valid JSON and leak no internals."""
+        payload = response.json()
+        self.assertFalse(payload["success"])
+        self.assertEqual(
+            response.get_header("Content-Type"), "application/json"
+        )
+        self.assertIsNone(payload["data"])
+        self.assertIsInstance(payload["error"]["message"], str)
+        for token in ("Traceback", "JSONDecodeError", "File \"", "line ",
+                      "ZEROSOC_API_KEY", ZS3_API_KEY, ZS3_WRONG_KEY):
+            self.assertNotIn(token, response.body)
+        for token in forbidden:
+            self.assertNotIn(token, response.body)
+
+    def _env(self, **overrides):
+        env = {"ZEROSOC_API_KEY": ZS3_API_KEY}
+        env.update(overrides)
+        return mock.patch.dict(os.environ, env, clear=True)
+
+
+class ZeroSOCRequestSizeTests(ZeroSOCPostIntegrationTestCase):
+    """Request-body size limiting via ZEROSOC_MAX_REQUEST_BYTES."""
+
+    def test_body_exactly_at_maximum_passes_size_gate(self):
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            response = self.post("/api/v1/events", self.make_event_body(512))
+            self.assertEqual(response.status, 201)
+            self.assertEqual(self.count_events(), 1)
+
+    def test_body_one_byte_over_maximum_returns_413(self):
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            response = self.post("/api/v1/events", self.make_event_body(513))
+            self.assertEqual(response.status, 413)
+            self.assert_clean_error(response)
+            # 413 must not run the protected operation.
+            self.assertEqual(self.count_events(), 0)
+
+    def test_large_declared_content_length_is_rejected_without_reading(self):
+        # Declare a body far larger than the limit but send almost nothing.
+        # The handler must reject on the declared size alone, promptly, without
+        # attempting to buffer the declared payload (guarded by read_timeout).
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: 50000000",
+            ])
+            status, raw, server_closed = self.raw_exchange(request, send_body=b"{}")
+            self.assertEqual(status, 413)
+            self.assertTrue(server_closed)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_oversized_rejection_is_valid_json_without_body_echo(self):
+        secret_marker = "supersecret-marker-value-in-body"
+        body = self.make_event_body(2000)
+        # Embed a marker we can prove is never reflected back.
+        body = body[:-2] + f',"leak":"{secret_marker}"'.encode() + body[-2:]
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            response = self.post("/api/v1/events", body)
+            self.assertEqual(response.status, 413)
+            self.assert_clean_error(response, secret_marker)
+
+    def test_invalid_configured_maximum_returns_generic_500(self):
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="not-a-number"):
+            response = self.post("/api/v1/events", b'{"event_type":"manual"}')
+            self.assertEqual(response.status, 500)
+            self.assertEqual(
+                response.json()["error"]["message"], "Server configuration error"
+            )
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+
+class ZeroSOCRequestFramingTests(ZeroSOCPostIntegrationTestCase):
+    """Content-Length / Transfer-Encoding framing hardening (raw sockets)."""
+
+    def test_missing_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request(["Content-Type: application/json"])
+            status, _, closed = self.raw_exchange(request, send_body=b'{"a":1}')
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_blank_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length:",
+            ])
+            status, _, closed = self.raw_exchange(request)
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+
+    def test_non_integer_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: twelve",
+            ])
+            status, _, closed = self.raw_exchange(request, send_body=b'{}')
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+
+    def test_negative_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: -5",
+            ])
+            status, _, closed = self.raw_exchange(request, send_body=b'{}')
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+
+    def test_duplicate_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: 2",
+                "Content-Length: 2",
+            ])
+            status, _, closed = self.raw_exchange(request, send_body=b'{}')
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_transfer_encoding_chunked_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Transfer-Encoding: chunked",
+            ])
+            status, _, closed = self.raw_exchange(request, send_body=b"0\r\n\r\n")
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_transfer_encoding_with_content_length_is_rejected(self):
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Transfer-Encoding: chunked",
+                "Content-Length: 2",
+            ])
+            status, _, closed = self.raw_exchange(request, send_body=b'{}')
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+
+    def test_zero_length_body_is_rejected_as_empty(self):
+        with self._env():
+            response = self.post("/api/v1/events", b"")
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_truncated_body_does_not_hang_and_is_rejected(self):
+        # Declare more bytes than we send, then close the write side. The
+        # bounded read returns the partial body (it must not block) and the
+        # partial JSON is rejected as malformed.
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: 40",
+            ])
+            status, _, closed = self.raw_exchange(
+                request, send_body=b'{"event_type":"man'
+            )
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_truncated_valid_json_is_rejected_without_side_effects(self):
+        # A short read must be rejected even when the received prefix happens
+        # to be independently valid JSON; declared framing is authoritative.
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: 10",
+            ])
+            status, raw, closed = self.raw_exchange(request, send_body=b"{}")
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            self.assertIn(b'"message": "Request body is incomplete"', raw)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_rejected_request_closes_connection_and_is_not_reinterpreted(self):
+        # A framing rejection must close the connection so trailing bytes are
+        # never misread as a second request. We pipeline a valid-looking second
+        # request line; the server must answer only the first and then close.
+        with self._env():
+            request = self.build_raw_request([
+                "Content-Type: application/json",
+                "Content-Length: -1",
+            ])
+            trailing = b"GET /api/v1/health HTTP/1.1\r\nHost: x\r\n\r\n"
+            status, raw, closed = self.raw_exchange(request, send_body=trailing)
+            self.assertEqual(status, 400)
+            self.assertTrue(closed)
+            # Exactly one HTTP response status line was produced -- the pipelined
+            # second request was never served on the (now closed) connection.
+            # (Counting "HTTP/1.0 " avoids matching the "BaseHTTP/" Server header.)
+            self.assertEqual(raw.count(b"HTTP/1.0 "), 1)
+            self.assertNotIn(b'"status_code": 200', raw)
+
+
+class ZeroSOCContentTypeAndJsonTests(ZeroSOCPostIntegrationTestCase):
+    """Content-Type and JSON syntax / root-shape hardening."""
+
+    def test_valid_application_json_is_accepted(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"event_type":"manual","severity":"low"}'
+            )
+            self.assertEqual(response.status, 201)
+            self.assertEqual(self.count_events(), 1)
+
+    def test_json_with_charset_parameter_is_accepted(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events",
+                b'{"event_type":"manual"}',
+                content_type="application/json; charset=utf-8",
+            )
+            self.assertEqual(response.status, 201)
+
+    def test_missing_content_type_is_rejected(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"event_type":"manual"}', content_type=None
+            )
+            self.assertEqual(response.status, 415)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_wrong_media_type_returns_415(self):
+        for ctype in ("text/plain", "application/x-www-form-urlencoded",
+                      "multipart/form-data", "application/xml"):
+            with self.subTest(content_type=ctype), self._env():
+                response = self.post(
+                    "/api/v1/events", b'{"event_type":"manual"}',
+                    content_type=ctype,
+                )
+                self.assertEqual(response.status, 415)
+                self.assertEqual(self.count_events(), 0)
+
+    def test_malformed_json_returns_400(self):
+        with self._env():
+            response = self.post("/api/v1/events", b'{"event_type": ')
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_trailing_garbage_after_json_is_rejected(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"event_type":"manual"} trailing'
+            )
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_invalid_utf8_body_returns_safe_client_error(self):
+        with self._env():
+            response = self.post("/api/v1/events", b"\xff\xfe\xfa")
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_whitespace_only_body_is_rejected(self):
+        with self._env():
+            response = self.post("/api/v1/events", b"    \n\t  ")
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_non_object_json_roots_are_rejected(self):
+        for root in (b"[1,2,3]", b'"a string"', b"42", b"true", b"null"):
+            with self.subTest(root=root), self._env():
+                response = self.post("/api/v1/events", root)
+                self.assertEqual(response.status, 400)
+                self.assert_clean_error(response)
+                self.assertEqual(self.count_events(), 0)
+
+
+class ZeroSOCEventFieldValidationHandlerTests(ZeroSOCPostIntegrationTestCase):
+    """POST /api/v1/events field validation at the real handler."""
+
+    def test_empty_object_creates_event_with_defaults(self):
+        with self._env():
+            response = self.post("/api/v1/events", b"{}")
+            self.assertEqual(response.status, 201)
+            event = response.json()["data"]["event"]
+            self.assertEqual(event["event_type"], run.DEFAULT_EVENT_TYPE)
+            self.assertEqual(event["severity"], run.DEFAULT_EVENT_SEVERITY)
+            self.assertEqual(self.count_events(), 1)
+
+    def test_valid_full_event_is_created(self):
+        with self._env():
+            body = json.dumps({
+                "event_type": "auth-failure",
+                "severity": "high",
+                "source": "10.0.0.5",
+                "message": "Repeated failed login from test",
+            }).encode()
+            response = self.post("/api/v1/events", body)
+            self.assertEqual(response.status, 201)
+            event = response.json()["data"]["event"]
+            self.assertEqual(event["event_type"], "auth-failure")
+            self.assertEqual(event["severity"], "high")
+            self.assertEqual(self.count_events(), 1)
+
+    def test_invalid_severity_is_rejected(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"severity":"urgent"}'
+            )
+            self.assertEqual(response.status, 400)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_each_valid_severity_is_accepted(self):
+        for severity in ("critical", "high", "medium", "low"):
+            with self.subTest(severity=severity), self._env():
+                response = self.post(
+                    "/api/v1/events",
+                    json.dumps({"severity": severity}).encode(),
+                )
+                self.assertEqual(response.status, 201)
+
+    def test_wrong_field_types_are_rejected(self):
+        for body in (b'{"event_type": 5}', b'{"event_type": true}',
+                     b'{"source": ["x"]}', b'{"message": {"a": 1}}'):
+            with self.subTest(body=body), self._env():
+                response = self.post("/api/v1/events", body)
+                self.assertEqual(response.status, 400)
+                self.assertEqual(self.count_events(), 0)
+
+    def test_blank_required_string_is_rejected(self):
+        with self._env():
+            response = self.post("/api/v1/events", b'{"event_type":"   "}')
+            self.assertEqual(response.status, 400)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_event_type_length_boundary(self):
+        with self._env():
+            at_max = json.dumps(
+                {"event_type": "a" * run.MAX_EVENT_TYPE_LENGTH}
+            ).encode()
+            self.assertEqual(self.post("/api/v1/events", at_max).status, 201)
+
+        with self._env():
+            over_max = json.dumps(
+                {"event_type": "a" * (run.MAX_EVENT_TYPE_LENGTH + 1)}
+            ).encode()
+            response = self.post("/api/v1/events", over_max)
+            self.assertEqual(response.status, 400)
+
+    def test_unknown_fields_are_ignored(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events",
+                b'{"event_type":"manual","totally_unknown":"whatever"}',
+            )
+            self.assertEqual(response.status, 201)
+            self.assertEqual(self.count_events(), 1)
+
+    def test_null_field_falls_back_to_default(self):
+        with self._env():
+            response = self.post("/api/v1/events", b'{"event_type": null}')
+            self.assertEqual(response.status, 201)
+            event = response.json()["data"]["event"]
+            self.assertEqual(event["event_type"], run.DEFAULT_EVENT_TYPE)
+
+
+class ZeroSOCSharedBoundaryTests(ZeroSOCPostIntegrationTestCase):
+    """The validation boundary applies to every JSON-writing POST route."""
+
+    def test_notifications_endpoint_shares_the_boundary(self):
+        with self._env():
+            # Valid object -> reaches the handler (no unresolved alerts -> 200).
+            ok = self.post("/api/v1/alerts/notifications", b'{"channel":"local"}')
+            self.assertEqual(ok.status, 200)
+
+            # Array root rejected by the shared boundary.
+            bad_root = self.post("/api/v1/alerts/notifications", b"[1,2]")
+            self.assertEqual(bad_root.status, 400)
+
+            # Wrong media type rejected by the shared boundary.
+            bad_ctype = self.post(
+                "/api/v1/alerts/notifications", b"{}", content_type="text/plain"
+            )
+            self.assertEqual(bad_ctype.status, 415)
+
+    def test_unknown_post_route_still_validates_body_then_404s(self):
+        with self._env():
+            response = self.post("/api/v1/does-not-exist", b"{}")
+            self.assertEqual(response.status, 404)
+            # A malformed body on an unknown route is still a 400 (boundary runs
+            # before route dispatch for all POSTs).
+            malformed = self.post("/api/v1/does-not-exist", b"{bad")
+            self.assertEqual(malformed.status, 400)
+
+
+class ZeroSOCPostAuthOrderingTests(ZeroSOCPostIntegrationTestCase):
+    """Authentication runs before body validation on protected POST routes."""
+
+    def test_missing_key_is_unauthorized_without_creating_event(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"event_type":"manual"}', api_key=None
+            )
+            self.assertEqual(response.status, 401)
+            self.assertEqual(
+                response.json()["error"]["message"], "Missing or invalid API key"
+            )
+            self.assertEqual(self.count_events(), 0)
+
+    def test_wrong_key_is_unauthorized_and_generic(self):
+        with self._env():
+            response = self.post(
+                "/api/v1/events", b'{"event_type":"manual"}',
+                api_key=ZS3_WRONG_KEY,
+            )
+            self.assertEqual(response.status, 401)
+            self.assert_clean_error(response)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_unauthorized_oversized_body_is_not_read_or_processed(self):
+        # Auth precedes body validation: a wrong key with a huge declared body
+        # must fail closed with 401, never buffering the body, never writing.
+        with self._env(ZEROSOC_MAX_REQUEST_BYTES="512"):
+            request = (
+                "POST /api/v1/events HTTP/1.1\r\n"
+                f"Host: 127.0.0.1:{self.port}\r\n"
+                f"{run.API_KEY_HEADER}: {ZS3_WRONG_KEY}\r\n"
+                "Content-Type: application/json\r\n"
+                "Content-Length: 50000000\r\n\r\n"
+            ).encode("ascii")
+            status, _, _ = self.raw_exchange(request, send_body=b"{}")
+            self.assertEqual(status, 401)
+            self.assertEqual(self.count_events(), 0)
+
+    def test_valid_key_reaches_handler(self):
+        with self._env():
+            response = self.post("/api/v1/events", b'{"event_type":"manual"}')
+            self.assertEqual(response.status, 201)
+            self.assertEqual(self.count_events(), 1)
+
+
+class ZeroSOCValidationCorsRegressionTests(ZeroSOCPostIntegrationTestCase):
+    """Validation errors preserve exact-match CORS and never widen it."""
+
+    def _cors_env(self, **overrides):
+        env = {
+            "ZEROSOC_API_KEY": ZS3_API_KEY,
+            "ZEROSOC_ALLOWED_ORIGINS": ZS3_ALLOWED_ORIGIN,
+        }
+        env.update(overrides)
+        return mock.patch.dict(os.environ, env, clear=True)
+
+    def test_validation_error_reflects_only_allowlisted_origin(self):
+        with self._cors_env():
+            response = self.post(
+                "/api/v1/events", b"[1,2,3]", origin=ZS3_ALLOWED_ORIGIN
+            )
+            self.assertEqual(response.status, 400)
+            self.assertEqual(
+                response.get_header("Access-Control-Allow-Origin"),
+                ZS3_ALLOWED_ORIGIN,
+            )
+            self.assertEqual(response.get_header("Vary"), "Origin")
+            self.assertNotEqual(
+                response.get_header("Access-Control-Allow-Origin"), "*"
+            )
+            self.assertFalse(
+                response.has_header("Access-Control-Allow-Private-Network")
+            )
+            self.assertFalse(
+                response.has_header("Access-Control-Allow-Credentials")
+            )
+
+    def test_validation_error_grants_no_cors_to_disallowed_origin(self):
+        with self._cors_env():
+            response = self.post(
+                "/api/v1/events", b"[1,2,3]", origin=ZS3_DISALLOWED_ORIGIN
+            )
+            self.assertEqual(response.status, 400)
+            self.assertIsNone(
+                response.get_header("Access-Control-Allow-Origin")
+            )
+            self.assertFalse(
+                response.has_header("Access-Control-Allow-Private-Network")
+            )
+
+    def test_error_is_not_more_permissive_than_success(self):
+        with self._cors_env():
+            success = self.post(
+                "/api/v1/events", b'{"event_type":"manual"}',
+                origin=ZS3_ALLOWED_ORIGIN,
+            )
+            failure = self.post(
+                "/api/v1/events", b"[1,2,3]", origin=ZS3_ALLOWED_ORIGIN
+            )
+            self.assertEqual(success.status, 201)
+            self.assertEqual(failure.status, 400)
+            self.assertEqual(
+                failure.get_header("Access-Control-Allow-Origin"),
+                success.get_header("Access-Control-Allow-Origin"),
+            )
 
 
 if __name__ == "__main__":
