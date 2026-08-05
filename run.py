@@ -59,6 +59,24 @@ class ConfigurationError(RuntimeError):
     """Raised when required ZeroSOC configuration is missing or invalid."""
 
 
+class RequestValidationError(Exception):
+    """
+    Raised by the request-body validation boundary for any client-input
+    problem (bad framing, oversized body, wrong media type, malformed JSON,
+    invalid fields).
+
+    Carries an HTTP status code and a fixed, client-safe message. The message
+    is deliberately generic: it never contains the rejected body, decoder
+    internals, secrets, environment values, or a Python exception string, so
+    callers can surface it directly without leaking internal detail.
+    """
+
+    def __init__(self, status_code, message):
+        super().__init__(message)
+        self.status_code = status_code
+        self.message = message
+
+
 def get_configured_api_key():
     """
     Reads and validates the API key from the environment.
@@ -186,6 +204,163 @@ def build_cors_headers(origin):
         headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
 
     return headers
+
+
+# =========================
+# Request Body Limits & Validation Config
+# =========================
+#
+# Rationale: this small JSON API only ever receives compact objects, so we
+# bound the request body *before* reading the declared payload. Reading an
+# attacker-declared Content-Length into memory unbounded is a trivial
+# denial-of-service; capping it keeps memory use predictable. The default is
+# 64 KiB, far larger than any legitimate event payload, and a hard ceiling
+# prevents an accidentally huge ZEROSOC_MAX_REQUEST_BYTES from silently
+# disabling the protection.
+
+MAX_REQUEST_BYTES_ENV_VAR = "ZEROSOC_MAX_REQUEST_BYTES"
+DEFAULT_MAX_REQUEST_BYTES = 65536        # 64 KiB, in bytes
+MAX_REQUEST_BYTES_CEILING = 1048576      # 1 MiB hard upper bound, in bytes
+
+# The single JSON media type this API accepts on writing endpoints. An
+# optional charset parameter (e.g. "application/json; charset=utf-8") is
+# tolerated; any other media type is rejected with 415.
+JSON_MEDIA_TYPE = "application/json"
+
+# Bounds for the established POST /api/v1/events field contract. Every field
+# is optional (the endpoint fills defaults, matching prior behavior), but any
+# supplied value must be the right type, non-blank, and within these bounds.
+EVENT_SEVERITIES = {"critical", "high", "medium", "low"}
+DEFAULT_EVENT_TYPE = "manual"
+DEFAULT_EVENT_SEVERITY = "low"
+DEFAULT_EVENT_SOURCE = "api"
+DEFAULT_EVENT_MESSAGE = "No message provided"
+MAX_EVENT_TYPE_LENGTH = 100
+MAX_EVENT_SOURCE_LENGTH = 255
+MAX_EVENT_MESSAGE_LENGTH = 2000
+
+
+def get_max_request_bytes():
+    """
+    Returns the configured maximum request-body size in bytes.
+
+    Reads ZEROSOC_MAX_REQUEST_BYTES when set, otherwise returns the 64 KiB
+    default. The value must be a positive base-10 integer within the hard
+    ceiling; zero, negative, blank, non-numeric, or over-ceiling values raise
+    ConfigurationError so a misconfiguration fails closed instead of silently
+    disabling the size limit.
+
+    The rejected value is never echoed in the error message (only the variable
+    name and the fixed ceiling appear), so an operator's environment is never
+    leaked through a configuration error.
+    """
+    raw_value = os.getenv(MAX_REQUEST_BYTES_ENV_VAR, "").strip()
+
+    if not raw_value:
+        return DEFAULT_MAX_REQUEST_BYTES
+
+    if not re.fullmatch(r"[0-9]+", raw_value):
+        raise ConfigurationError(
+            f"{MAX_REQUEST_BYTES_ENV_VAR} must be a positive base-10 integer "
+            f"number of bytes."
+        )
+
+    value = int(raw_value)
+
+    if value <= 0:
+        raise ConfigurationError(
+            f"{MAX_REQUEST_BYTES_ENV_VAR} must be greater than zero bytes."
+        )
+
+    if value > MAX_REQUEST_BYTES_CEILING:
+        raise ConfigurationError(
+            f"{MAX_REQUEST_BYTES_ENV_VAR} must not exceed "
+            f"{MAX_REQUEST_BYTES_CEILING} bytes."
+        )
+
+    return value
+
+
+def _clean_optional_event_string(data, key, default, max_length):
+    """
+    Validates one optional string field from an event payload.
+
+    Absent or JSON-null values fall back to the endpoint's established default.
+    A supplied value must be a real string (JSON booleans/numbers/objects/arrays
+    are rejected), non-blank after trimming, and within max_length. Raises
+    RequestValidationError(400, ...) with a body-free message otherwise.
+    """
+    if key not in data or data[key] is None:
+        return default
+
+    value = data[key]
+
+    # bool is a subclass of int, but here we simply require a real string.
+    if not isinstance(value, str):
+        raise RequestValidationError(400, f"{key} must be a string")
+
+    value = value.strip()
+
+    if not value:
+        raise RequestValidationError(400, f"{key} must not be blank")
+
+    if len(value) > max_length:
+        raise RequestValidationError(
+            400, f"{key} must be at most {max_length} characters"
+        )
+
+    return value
+
+
+def validate_create_event_payload(data):
+    """
+    Validates the POST /api/v1/events body against the established contract and
+    returns cleaned create_security_event() keyword arguments.
+
+    All fields remain optional to preserve the endpoint's prior default-filling
+    behavior, but any supplied field is type-checked, trimmed, bounded, and (for
+    severity) restricted to the documented allowlist. Unknown fields are ignored
+    on purpose -- that lenient-compatibility contract predates this phase.
+
+    source is intentionally NOT required to be an IP address: the established
+    contract stores arbitrary source labels (for example "api" or "unittest"),
+    so only string type and length are enforced. Raises
+    RequestValidationError(400, ...) on any violation.
+    """
+    if not isinstance(data, dict):
+        raise RequestValidationError(400, "JSON body must be an object")
+
+    event_type = _clean_optional_event_string(
+        data, "event_type", DEFAULT_EVENT_TYPE, MAX_EVENT_TYPE_LENGTH
+    )
+    source = _clean_optional_event_string(
+        data, "source", DEFAULT_EVENT_SOURCE, MAX_EVENT_SOURCE_LENGTH
+    )
+    message = _clean_optional_event_string(
+        data, "message", DEFAULT_EVENT_MESSAGE, MAX_EVENT_MESSAGE_LENGTH
+    )
+
+    if "severity" in data and data["severity"] is not None:
+        severity = data["severity"]
+
+        if not isinstance(severity, str):
+            raise RequestValidationError(400, "severity must be a string")
+
+        severity = severity.strip().lower()
+
+        if severity not in EVENT_SEVERITIES:
+            raise RequestValidationError(
+                400, "severity must be one of: critical, high, medium, low"
+            )
+    else:
+        severity = DEFAULT_EVENT_SEVERITY
+
+    return {
+        "event_type": event_type,
+        "severity": severity,
+        "source": source,
+        "message": message,
+    }
 
 
 # =========================
@@ -3539,18 +3714,27 @@ def get_request_metrics():
 def handle_create_event(handler, ctx, data):
     """
     Handles POST /api/v1/events.
-    Creates a new security event.
+    Creates a new security event after validating the supplied fields.
     """
-    event_type = data.get("event_type", "manual")
-    severity = data.get("severity", "low")
-    message = data.get("message", "No message provided")
-    source = data.get("source", "api")
+    try:
+        fields = validate_create_event_payload(data)
+    except RequestValidationError as error:
+        log_request(ctx, error.status_code, error.message)
+
+        handler.send_json_response(
+            error.status_code,
+            error={
+                "message": error.message
+            },
+            request_id=ctx.request_id
+        )
+        return
 
     event = create_security_event(
-        event_type=event_type,
-        severity=severity,
-        source=source,
-        message=message
+        event_type=fields["event_type"],
+        severity=fields["severity"],
+        source=fields["source"],
+        message=fields["message"]
     )
 
     log_request(ctx, 201, "Security event created")
@@ -4641,6 +4825,119 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             "/api/v1/logs/recent": self.handle_recent_logs
         }
 
+    def read_json_object_body(self):
+        """
+        Central request-body validation boundary for every JSON-writing route.
+
+        This single method owns framing, size, media-type, decoding, JSON-syntax,
+        and root-shape checks so individual POST handlers never re-implement
+        slightly different body logic. It returns the decoded JSON object (a
+        dict) on success and raises RequestValidationError(status_code, message)
+        for any client-input problem; the caller emits the JSON error through
+        send_json_response using the existing response envelope.
+
+        Ordering and connection handling are deliberate:
+          * Transfer-Encoding is rejected outright -- this API never streams or
+            chunk-decodes request bodies.
+          * Content-Length must be present, single, and a non-negative integer;
+            a declared size above the configured maximum is rejected *before*
+            any body is read, so an oversized declared payload is never buffered.
+          * On these framing/size rejections the connection is closed, because
+            unread request bytes could otherwise be misread as the start of a
+            following request on a reused connection. This is bounded
+            application-handler hardening, not a full request-smuggling defense.
+          * The body (already bounded by the size check) is then read exactly
+            once and fully, so media-type and JSON validation happen on a drained
+            connection that stays safe to reuse.
+
+        The raised message is always a fixed, client-safe string -- it never
+        includes the rejected body, decoder internals, secrets, or environment
+        values. get_max_request_bytes() may raise ConfigurationError (a server
+        misconfiguration), which the caller maps to a generic 500.
+        """
+        max_bytes = get_max_request_bytes()
+        headers = self.headers
+
+        # 1. No chunked / unsupported transfer framing, and never both
+        #    Transfer-Encoding and Content-Length (ambiguous framing).
+        if headers.get("Transfer-Encoding") is not None:
+            self.close_connection = True
+            raise RequestValidationError(
+                400, "Transfer-Encoding is not supported"
+            )
+
+        # 2. Content-Length must be present exactly once.
+        content_length_values = headers.get_all("Content-Length") or []
+
+        if len(content_length_values) == 0:
+            self.close_connection = True
+            raise RequestValidationError(
+                400, "Content-Length header is required"
+            )
+
+        if len(content_length_values) > 1:
+            self.close_connection = True
+            raise RequestValidationError(
+                400, "Duplicate Content-Length headers are not allowed"
+            )
+
+        raw_length = content_length_values[0].strip()
+
+        # 3. Content-Length must be a non-negative base-10 integer.
+        if not re.fullmatch(r"[0-9]+", raw_length):
+            self.close_connection = True
+            raise RequestValidationError(400, "Invalid Content-Length header")
+
+        content_length = int(raw_length)
+
+        # 4. Reject an oversized declared body before reading it.
+        if content_length > max_bytes:
+            self.close_connection = True
+            raise RequestValidationError(
+                413, "Request body exceeds the maximum allowed size"
+            )
+
+        # 5. Zero-length bodies are treated as empty (established contract).
+        if content_length == 0:
+            raise RequestValidationError(400, "Request body is empty")
+
+        # 6. Read exactly the declared (bounded) number of bytes.
+        body_bytes = self.rfile.read(content_length)
+
+        # 7. Require the JSON media type (charset parameter tolerated). Checked
+        #    after the bounded read so the connection stays reusable.
+        content_type = headers.get("Content-Type", "") or ""
+        media_type = content_type.split(";", 1)[0].strip().lower()
+
+        if media_type != JSON_MEDIA_TYPE:
+            raise RequestValidationError(
+                415, "Content-Type must be application/json"
+            )
+
+        # 8. Decode as UTF-8 without leaking codec internals.
+        try:
+            body = body_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise RequestValidationError(
+                400, "Request body must be valid UTF-8"
+            )
+
+        # 9. Empty / whitespace-only bodies are rejected consistently.
+        if not body.strip():
+            raise RequestValidationError(400, "Request body is empty")
+
+        # 10. Parse JSON. json.loads already rejects trailing non-whitespace.
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            raise RequestValidationError(400, "Invalid JSON body")
+
+        # 11. Object-based endpoints require a JSON object root.
+        if not isinstance(data, dict):
+            raise RequestValidationError(400, "JSON body must be an object")
+
+        return data
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header("Content-Length", "0")
@@ -4794,34 +5091,31 @@ class ZeroSOCHandler(BaseHTTPRequestHandler):
             )
             return
 
+        # Central body-validation boundary: bounds size before reading, rejects
+        # ambiguous framing/media types, and returns a validated JSON object.
+        # Client-input problems become coherent JSON errors; a server-side
+        # request-limit misconfiguration becomes a generic 500 that never leaks
+        # the environment value.
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length).decode("utf-8")
-
-            if not body:
-                raise ValueError("Request body is empty")
-
-            data = json.loads(body)
-
-        except json.JSONDecodeError:
-            log_request(ctx, 400, "Invalid JSON body")
+            data = self.read_json_object_body()
+        except RequestValidationError as error:
+            log_request(ctx, error.status_code, error.message)
 
             self.send_json_response(
-                400,
+                error.status_code,
                 error={
-                    "message": "Invalid JSON body"
+                    "message": error.message
                 },
                 request_id=request_id
             )
             return
-
-        except ValueError as error:
-            log_request(ctx, 400, str(error))
+        except ConfigurationError:
+            log_request(ctx, 500, "Request body limit misconfigured")
 
             self.send_json_response(
-                400,
+                500,
                 error={
-                    "message": str(error)
+                    "message": "Server configuration error"
                 },
                 request_id=request_id
             )

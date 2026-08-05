@@ -342,6 +342,56 @@ Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers $headers
 Both `/system` and `/api/v1/system` require this header. The `/health`,
 `/status`, `/api/v1/health`, and `/api/v1/status` endpoints remain public.
 
+### Request Validation and Input Hardening
+
+Requests that send a body (the `POST` endpoints) pass through a single,
+centralized validation boundary before any endpoint logic runs. Centralizing
+these checks keeps every write route consistent and avoids scattering slightly
+different body-parsing logic across handlers.
+
+**Request-body size limit.** The body size is bounded by
+`ZEROSOC_MAX_REQUEST_BYTES` (default **65536 bytes / 64 KiB**). The limit is
+checked against the declared `Content-Length` *before* the body is read, so an
+oversized or hostile declaration is rejected with `413 Payload Too Large`
+without buffering the payload. The value must be a positive whole number of
+bytes and may not exceed 1 MiB; an invalid setting fails closed rather than
+silently disabling the limit. *Why:* reading an attacker-declared length into
+memory unbounded is a trivial denial-of-service, so payloads are bounded before
+they are read.
+
+**Framing.** `Content-Length` must be present, a single unambiguous
+non-negative integer, and within the limit. Missing, blank, non-integer,
+negative, or duplicate `Content-Length` values, and any `Transfer-Encoding`
+(the API does not accept chunked/streamed request bodies), are rejected with
+`400 Bad Request`, and the connection is closed so unread bytes cannot be
+misread as a following request. *Why:* ambiguous framing is a common smuggling
+and corruption vector; this is bounded application-level hardening, not a
+reverse-proxy guarantee.
+
+**Media type.** Writing endpoints require `Content-Type: application/json`
+(an optional `; charset=...` parameter is accepted). Other types (`text/plain`,
+form, multipart, XML, …) are rejected with `415 Unsupported Media Type`.
+
+**JSON and fields.** Bodies must be valid UTF-8, syntactically valid JSON with
+no trailing data, and a JSON **object** at the root. `POST /api/v1/events`
+validates its fields: `event_type`, `source`, and `message` must be non-blank,
+bounded strings, and `severity` must be one of `critical`, `high`, `medium`, or
+`low`. All event fields remain optional (defaults are filled as before) and
+unknown fields are ignored, preserving the endpoint's established contract.
+Malformed or invalid input is rejected with `400 Bad Request` and never creates
+a database record.
+
+Error responses use the standard JSON envelope with a short, stable message.
+They never include the rejected body, secrets, environment values, stack
+traces, or decoder internals, and they never widen CORS beyond the exact-match
+allowlist. *Why:* validation happens at the application boundary, while database
+access continues to rely on parameterized SQL for injection safety — bounding
+and validating input does not replace parameterized queries.
+
+This validation is **application-level hardening only**. ZeroSOC is not a
+production reverse proxy, WAF, rate limiter, or penetration-tested deployment,
+and does not claim complete request-smuggling protection.
+
 ## API Endpoints
 
 ZeroSOC exposes public service-check endpoints and protected SOC data endpoints.
