@@ -36,6 +36,8 @@ Do not use this project for unauthorized scanning, exploitation, credential thef
 
 Security vulnerabilities should be reported according to:
 
+[SECURITY.md](SECURITY.md).
+
 ## Enforcement
 
 Project maintainers may remove comments, issues, pull requests, or contributions that violate this Code of Conduct.
@@ -57,6 +59,3 @@ This Code of Conduct applies to project spaces, including:
 For project issues, use GitHub issues when appropriate.
 
 For security concerns, follow the private reporting process in `SECURITY.md`.
-
-```text
-SECURITY.md
