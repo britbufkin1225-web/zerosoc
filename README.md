@@ -24,7 +24,7 @@ The project demonstrates secure API design, defensive request handling, SQLite p
 
 ZeroSOC is in active portfolio development. `run.py` is the canonical and supported backend entry point, and the latest completed security-hardening checkpoint is ZS-3.1.
 
-The automated suite currently contains 141 tests. One ZS-5 verification run on Python 3.13.13 completed 140 tests successfully and reported one failure in `test_events_summary_includes_tags_and_latest_event`; repeat full-suite runs during independent review passed all 141 tests, so that failure appears intermittent. The README therefore makes no guaranteed all-tests-passing claim.
+The automated suite currently contains 145 tests. During the local ZS-6 implementation pass, all 145 passed in three consecutive full-suite runs after deterministic event ordering and counter regression coverage were added. Independent review and merge approval remain pending.
 
 ## Architecture
 
@@ -156,6 +156,65 @@ The API normalizes trailing slashes. `/health` and `/status` are public aliases 
 | GET | `/api/v1/events/{id}` | `X-API-Key` | Return one event by ID. |
 | GET | `/api/v1/events/summary` | `X-API-Key` | Summarize event counts, tags, and recent activity. |
 | GET | `/api/v1/events/export` | `X-API-Key` | Export filtered events as CSV. |
+
+Selected response examples (protected requests require `X-API-Key`):
+
+`GET /api/v1/events?limit=1`
+
+```json
+{
+  "success": true,
+  "status_code": 200,
+  "request_id": "0a2af67f-79cd-4e7a-8928-80ec41926a66",
+  "data": {
+    "events": [{
+      "id": "d6d893d8-9a48-4c42-9e32-92d386fb44d2",
+      "timestamp": "2026-08-14T09:30:00",
+      "source_ip": "192.168.1.24",
+      "event_type": "auth-failure",
+      "severity": "medium",
+      "message": "Repeated login failure",
+      "tags": ["type:auth-failure", "source:192.168.1.24"]
+    }],
+    "count": 1,
+    "filters": {
+      "limit": 1,
+      "severity": null,
+      "tag": null,
+      "event_type": null,
+      "source": null,
+      "q": null,
+      "since_hours": null
+    }
+  },
+  "error": null
+}
+```
+
+`GET /api/v1/events/summary`
+
+```json
+{
+  "success": true,
+  "status_code": 200,
+  "request_id": "41874962-3535-4891-aeab-b68a914899ee",
+  "data": {
+    "total_events": 3,
+    "by_severity": {"high": 1, "medium": 2},
+    "by_event_type": {"auth-failure": 2, "port-scan": 1},
+    "by_tag": {"needs-review": 1},
+    "latest_event": {
+      "id": "d6d893d8-9a48-4c42-9e32-92d386fb44d2",
+      "timestamp": "2026-08-14T09:30:00",
+      "event_type": "auth-failure",
+      "severity": "medium",
+      "tag": "type:auth-failure,source:192.168.1.24",
+      "message": "Repeated login failure"
+    }
+  },
+  "error": null
+}
+```
 
 ### Alerts and incidents
 

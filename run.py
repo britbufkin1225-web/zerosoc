@@ -688,6 +688,9 @@ def save_security_event(event):
     conn.close()
 
 
+SECURITY_EVENT_ORDER = "timestamp DESC, id DESC"
+
+
 def get_security_events(
     limit=50,
     severity=None,
@@ -773,7 +776,7 @@ def get_security_events(
     if filters:
         query += " WHERE " + " AND ".join(filters)
 
-    query += " ORDER BY timestamp DESC LIMIT ?"
+    query += f" ORDER BY {SECURITY_EVENT_ORDER} LIMIT ?"
     params.append(limit)
 
     cursor.execute(query, params)
@@ -902,10 +905,10 @@ def get_events_summary():
                 summary["by_tag"][tag] = summary["by_tag"].get(tag, 0) + 1
 
         # Latest event
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT id, timestamp, event_type, severity, tag, message
             FROM security_events
-            ORDER BY timestamp DESC
+            ORDER BY {SECURITY_EVENT_ORDER}
             LIMIT 1
         """)
         latest = cursor.fetchone()
