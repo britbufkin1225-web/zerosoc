@@ -151,6 +151,7 @@ button:hover {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
+.events-table-scroll:focus-visible,
 .skip-link:focus-visible {
     outline: 3px solid rgba(47, 111, 237, 0.22);
     outline-offset: 2px;
@@ -953,6 +954,10 @@ tr:hover td {
 }
 
 @media (max-width: 640px) {
+    .events-table-scroll {
+        max-height: min(430px, 65vh);
+    }
+
     .summary-grid,
     .summary-detail-grid,
     .chart-grid,

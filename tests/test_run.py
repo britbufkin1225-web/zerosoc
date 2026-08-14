@@ -95,6 +95,17 @@ class ZeroSOCHelperTests(unittest.TestCase):
                     source="unittest",
                     message="Possible port scan from test"
                 )
+                conn = run.get_db_connection()
+                conn.execute(
+                    "UPDATE security_events SET timestamp = ? WHERE id = ?",
+                    ("2026-01-01T00:00:00", first["id"])
+                )
+                conn.execute(
+                    "UPDATE security_events SET timestamp = ? WHERE id = ?",
+                    ("2026-01-01T00:00:01", latest["id"])
+                )
+                conn.commit()
+                conn.close()
 
                 summary = run.get_events_summary()
 
@@ -108,6 +119,91 @@ class ZeroSOCHelperTests(unittest.TestCase):
                 self.assertNotEqual(summary["latest_event"]["id"], first["id"])
             finally:
                 self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_event_ordering_uses_id_as_stable_equal_timestamp_tiebreaker(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                timestamp = "2026-01-01T00:00:00"
+                events = [
+                    {
+                        "id": event_id,
+                        "timestamp": timestamp,
+                        "source": "unittest",
+                        "event_type": "manual-test",
+                        "severity": "low",
+                        "message": event_id,
+                        "tags": ["source:unittest"]
+                    }
+                    for event_id in ("event-a", "event-b")
+                ]
+                for event in events:
+                    run.save_security_event(event)
+
+                stored = run.get_security_events()
+                summary = run.get_events_summary()
+
+                self.assertEqual([event["id"] for event in stored], ["event-b", "event-a"])
+                self.assertEqual(summary["latest_event"]["id"], "event-b")
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_events_summary_handles_empty_database(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                self.assertEqual(run.get_events_summary(), {
+                    "total_events": 0,
+                    "by_severity": {},
+                    "by_event_type": {},
+                    "by_tag": {},
+                    "latest_event": None
+                })
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_events_summary_counter_groupings_match_stored_events(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            original_data_dir, original_db_file = self.configure_temp_database(temp_dir)
+
+            try:
+                fixtures = (
+                    ("event-a", "low", "auth-failure", ["shared", "first"]),
+                    ("event-b", "high", "auth-failure", ["shared"]),
+                    ("event-c", "high", "port-scan", ["shared", "third"]),
+                )
+                for event_id, severity, event_type, tags in fixtures:
+                    run.save_security_event({
+                        "id": event_id,
+                        "timestamp": "2026-01-01T00:00:00",
+                        "source": "unittest",
+                        "event_type": event_type,
+                        "severity": severity,
+                        "message": event_id,
+                        "tags": tags
+                    })
+
+                summary = run.get_events_summary()
+
+                self.assertEqual(summary["total_events"], 3)
+                self.assertEqual(summary["by_severity"], {"high": 2, "low": 1})
+                self.assertEqual(summary["by_event_type"], {"auth-failure": 2, "port-scan": 1})
+                self.assertEqual(summary["by_tag"], {"shared": 3, "first": 1, "third": 1})
+            finally:
+                self.restore_temp_database(original_data_dir, original_db_file)
+
+    def test_dashboard_event_scroll_region_is_keyboard_accessible(self):
+        dashboard_html = Path("dashboard/index.html").read_text(encoding="utf-8")
+        dashboard_css = Path("dashboard/style.css").read_text(encoding="utf-8")
+
+        self.assertIn('id="eventsTable"', dashboard_html)
+        self.assertIn('role="region"', dashboard_html)
+        self.assertIn('tabindex="0"', dashboard_html)
+        self.assertIn(".events-table-scroll thead th", dashboard_css)
+        self.assertIn("position: sticky", dashboard_css)
+        self.assertIn(".events-table-scroll:focus-visible", dashboard_css)
 
     def test_process_network_devices_marks_new_then_known(self):
         with tempfile.TemporaryDirectory() as temp_dir:

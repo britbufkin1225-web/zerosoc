@@ -22,7 +22,7 @@ This document separates current constraints from genuinely planned work. ZeroSOC
 ### Dashboard
 
 - The static dashboard is not fully accessibility-tested.
-- Some actions use browser prompts, and large tables may need pagination or virtual scrolling.
+- Some actions use browser prompts. The event table has bounded keyboard-accessible scrolling, but large datasets may still need API pagination or virtual scrolling.
 - The dashboard is normally served separately on port 5500 and must be given the API key for protected requests.
 
 ### Network scanning and Raspberry Pi
@@ -34,7 +34,7 @@ This document separates current constraints from genuinely planned work. ZeroSOC
 
 ## Completed security work
 
-Through ZS-3.1, ZeroSOC requires an environment-supplied key, compares it in constant time, protects sensitive routes, defaults to localhost, restricts CORS to exact origins, validates JSON request bodies, enforces bounded request sizes before reading, and rejects ambiguous or unsupported request framing. The locked ZS-4 baseline passes 141 automated tests.
+Through ZS-3.1, ZeroSOC requires an environment-supplied key, compares it in constant time, protects sensitive routes, defaults to localhost, restricts CORS to exact origins, validates JSON request bodies, enforces bounded request sizes before reading, and rejects ambiguous or unsupported request framing. Later portfolio phases retained those controls; current test results are recorded in the README rather than asserted here as a stale phase baseline.
 
 These controls do not make the project production-ready or penetration-tested.
 
@@ -42,9 +42,9 @@ These controls do not make the project production-ready or penetration-tested.
 
 - Evaluate per-user identity, roles, key rotation, and auditable authorization.
 - Add production-oriented TLS/reverse-proxy and rate-limiting guidance.
-- Improve pagination, large-dataset behavior, dashboard accessibility, and non-prompt interactions.
+- Improve API pagination, very-large-dataset behavior, broader dashboard accessibility coverage, and non-prompt interactions.
 - Expand detection and correlation beyond basic local rules.
 - Define log/data retention, backup, and recovery procedures.
 - Validate the application and scanner on Raspberry Pi hardware before publishing deployment claims.
 - Document systemd/boot-time operation only after hardware validation.
-- Review the retained alternate `app/main.py` entry point separately in ZS-4.1.
+- Decide whether to remove or modernize the retained historical `app/main.py` entry point in a future scoped phase.
