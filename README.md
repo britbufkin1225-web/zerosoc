@@ -24,7 +24,7 @@ The project demonstrates secure API design, defensive request handling, SQLite p
 
 ZeroSOC is in active portfolio development. `run.py` is the canonical and supported backend entry point, and the latest completed security-hardening checkpoint is ZS-3.1.
 
-The automated suite currently contains 141 tests. A ZS-5 verification run on Python 3.12.13 completed 140 tests successfully and reported one failure in `test_events_summary_includes_tags_and_latest_event`; the README therefore makes no all-tests-passing claim.
+The automated suite currently contains 141 tests. One ZS-5 verification run on Python 3.13.13 completed 140 tests successfully and reported one failure in `test_events_summary_includes_tags_and_latest_event`; repeat full-suite runs during independent review passed all 141 tests, so that failure appears intermittent. The README therefore makes no guaranteed all-tests-passing claim.
 
 ## Architecture
 
