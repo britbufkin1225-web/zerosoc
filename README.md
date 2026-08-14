@@ -202,7 +202,13 @@ Selected response examples (protected requests require `X-API-Key`):
     "total_events": 3,
     "by_severity": {"high": 1, "medium": 2},
     "by_event_type": {"auth-failure": 2, "port-scan": 1},
-    "by_tag": {"needs-review": 1},
+    "by_tag": {
+      "type:auth-failure": 2,
+      "source:192.168.1.24": 2,
+      "type:port-scan": 1,
+      "source:192.168.1.50": 1,
+      "needs-review": 1
+    },
     "latest_event": {
       "id": "d6d893d8-9a48-4c42-9e32-92d386fb44d2",
       "timestamp": "2026-08-14T09:30:00",
