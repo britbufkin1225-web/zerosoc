@@ -1,65 +1,104 @@
 # ZeroSOC
 
-![Python](https://img.shields.io/badge/Python-3.x-blue)
-![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey)
-![Status](https://img.shields.io/badge/Status-Active%20Development-yellow)
-![Project](https://img.shields.io/badge/Type-Cybersecurity%20Portfolio-blueviolet)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Python](https://img.shields.io/badge/Python-3.x-blue) ![SQLite](https://img.shields.io/badge/Database-SQLite-lightgrey) ![Status](https://img.shields.io/badge/Status-Active%20Development-yellow) ![Project](https://img.shields.io/badge/Type-Cybersecurity%20Portfolio-blueviolet) ![License](https://img.shields.io/badge/License-MIT-green)
 
-ZeroSOC is a compact cybersecurity and backend-engineering portfolio project. It combines a standard-library Python HTTP API, SQLite persistence, a browser dashboard, security-event and alert workflows, host metrics, and local-network device visibility. It is intended for local development, home-lab learning, and technical demonstration—not as a production SOC, SIEM, EDR, or SOAR replacement.
+ZeroSOC is a compact cybersecurity and backend-engineering portfolio project for local development and authorized home-lab learning. It provides a standard-library Python HTTP API, SQLite persistence, a browser dashboard, security-event and alert workflows, host metrics, and local-network device discovery.
 
-The latest completed security-hardening checkpoint is **ZS-3.1**. At the locked ZS-4 baseline, the automated suite passes **141/141 tests**. `run.py` is the canonical and supported backend entry point.
+The project demonstrates secure API design, defensive request handling, SQLite persistence, SOC workflow modeling, automated testing, structured observability, and technical documentation. It is an educational system and technical demonstration—not a production SOC or a replacement for a SIEM, EDR, or SOAR platform.
+
+## Contents
+
+- [Project status](#project-status)
+- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [API endpoints](#api-endpoints)
+- [Security controls](#security-controls)
+- [Testing](#testing)
+- [Portfolio highlights](#portfolio-highlights)
+- [Screenshots](#screenshots)
+- [Limitations and planned work](#limitations-and-planned-work)
+- [License](#license)
+
+## Project status
+
+ZeroSOC is in active portfolio development. `run.py` is the canonical and supported backend entry point, and the latest completed security-hardening checkpoint is ZS-3.1.
+
+The automated suite currently contains 141 tests. One ZS-5 verification run on Python 3.13.13 completed 140 tests successfully and reported one failure in `test_events_summary_includes_tags_and_latest_event`; repeat full-suite runs during independent review passed all 141 tests, so that failure appears intermittent. The README therefore makes no guaranteed all-tests-passing claim.
 
 ## Architecture
 
-ZeroSOC is deliberately small. The active backend implementation is consolidated in `run.py`; it uses `http.server`, `sqlite3`, and other Python standard-library modules. The dashboard in `dashboard/` is static HTML, CSS, and JavaScript and uses Chart.js in the browser.
+ZeroSOC deliberately keeps its active runtime small and auditable. The backend is consolidated in `run.py` and uses `http.server`, `sqlite3`, and other Python standard-library modules. The dashboard in `dashboard/` is static HTML, CSS, and JavaScript, with Chart.js loaded in the browser.
 
 | Component | Current implementation |
 | --- | --- |
 | Backend API | `run.py` using `BaseHTTPRequestHandler` and `HTTPServer` |
 | Persistence | SQLite runtime database under `data/` |
-| Dashboard | `dashboard/index.html`, `style.css`, and `app.js` |
+| Dashboard | `dashboard/index.html`, `dashboard/style.css`, and `dashboard/app.js` |
 | Authentication | Shared API key supplied in `X-API-Key` |
 | Observability | Request IDs, structured request logs, metrics, events, and exports |
 | Network visibility | Local ARP/ping-based discovery and device inventory |
 
+System flow:
+
+```text
+Dashboard/client → authenticated HTTP API → validation and SOC services → SQLite persistence and structured logging
+```
+
 ![ZeroSOC architecture](screenshots/zerosoc-architecture-v2.png)
 
-`app/main.py` remains in the repository but is not the supported entry point. Its disposition is deferred to ZS-4.1.
+*Retained architecture overview of the API, SOC workflows, storage, observability, dashboard, and local-network discovery boundaries.*
 
 ## Quick start
 
-ZeroSOC has no third-party Python runtime packages. `requirements.txt` is intentionally limited to comments as a placeholder for future dependencies; there is currently nothing to install from it. Use Python 3 from the repository root.
+### Prerequisites
 
-Clone the repository:
+- Git
+- Python 3
+- A modern web browser
+- Two terminal windows
+
+ZeroSOC has no third-party Python runtime packages. `requirements.txt` is intentionally a placeholder, so there is currently nothing to install from it.
+
+> **Authorized use only:** ZeroSOC is an educational home-lab and portfolio project. Run network-discovery features only on systems and networks you own or are explicitly authorized to test.
+
+### PowerShell
+
+Clone the repository and enter its root directory:
 
 ```powershell
 git clone https://github.com/britbufkin1225-web/zerosoc.git
 Set-Location zerosoc
 ```
 
-Set a long, random API key and start the backend on its localhost-only default:
+Create a long, random API key for this terminal session, then start the localhost-only backend:
 
 ```powershell
 $env:ZEROSOC_API_KEY = "replace-with-a-long-random-secret"
 python run.py
 ```
 
-In another PowerShell terminal, serve the dashboard:
+In a second PowerShell terminal, enter the same repository and serve the dashboard:
 
 ```powershell
 Set-Location path\to\zerosoc
 python -m http.server 5500
 ```
 
-Open `http://localhost:5500/dashboard/`. Protected requests require the same key in the `X-API-Key` header:
+Open [http://localhost:5500/dashboard/](http://localhost:5500/dashboard/). The dashboard prompts for the same API key and sends it in the `X-API-Key` header. It can keep the key in tab-scoped `sessionStorage`; persistent `localStorage` is used only after a separate confirmation. Browser storage is convenient for a local demo but is not a secure credential vault.
+
+From another PowerShell prompt, verify the public health route and one protected route:
 
 ```powershell
+Invoke-RestMethod "http://localhost:8000/health"
+
 $headers = @{ "X-API-Key" = $env:ZEROSOC_API_KEY }
 Invoke-RestMethod "http://localhost:8000/api/v1/system" -Headers $headers
 ```
 
-Bash equivalents:
+Press `Ctrl+C` in both server terminals to stop the dashboard and backend.
+
+### Bash
 
 ```bash
 git clone https://github.com/britbufkin1225-web/zerosoc.git
@@ -68,30 +107,92 @@ export ZEROSOC_API_KEY="replace-with-a-long-random-secret"
 python3 run.py
 ```
 
-The server refuses to start when `ZEROSOC_API_KEY` is unset, blank, or whitespace-only. Never commit a real key.
+In a second terminal:
+
+```bash
+cd path/to/zerosoc
+python3 -m http.server 5500
+curl http://localhost:8000/health
+curl -H "X-API-Key: $ZEROSOC_API_KEY" http://localhost:8000/api/v1/system
+```
+
+The backend refuses to start when `ZEROSOC_API_KEY` is unset, blank, or whitespace-only. Never commit a real key. `.env.example` is reference material only; the standard-library application does **not** automatically load `.env` files.
 
 ## Configuration
 
-The application reads configuration directly from the process environment. `.env.example` is reference material only: the standard-library application does **not** automatically load `.env` files.
+The application reads configuration directly from the process environment.
 
 | Variable | Required/default | Behavior |
 | --- | --- | --- |
 | `ZEROSOC_API_KEY` | Required | Shared secret for protected endpoints; compared in constant time and not logged. |
-| `ZEROSOC_HOST` | `127.0.0.1` | Bind address. The default is localhost-only. |
+| `ZEROSOC_HOST` | `127.0.0.1` | Bind address; the default is localhost-only. |
 | `ZEROSOC_ALLOWED_ORIGINS` | `http://localhost:5500,http://127.0.0.1:5500` | Comma-separated exact CORS origins; wildcard origins are not used. |
-| `ZEROSOC_MAX_REQUEST_BYTES` | `65536` | Maximum request body in bytes; must be a positive integer no greater than 1 MiB. |
+| `ZEROSOC_MAX_REQUEST_BYTES` | `65536` | Maximum request body in bytes; must be positive and no greater than 1 MiB. |
 | `ZEROSOC_ALERT_WEBHOOK_URL` | Empty/disabled | Destination used only when webhook notification delivery is requested. |
 | `ZEROSOC_ALERT_NOTIFICATION_COOLDOWN_SECONDS` | `900` | Cooldown between duplicate alert notifications. |
 
-The safe default is `127.0.0.1`, which does not expose the API to other devices. LAN access is an explicit opt-in:
+Keep the default `127.0.0.1` binding for normal use. Exposing the plain-HTTP service on another interface is an explicit advanced configuration choice: there is no TLS, the shared key and response data are not encrypted in transit, and Raspberry Pi or cross-device LAN deployment has not been validated on hardware.
 
-```powershell
-$env:ZEROSOC_HOST = "0.0.0.0"
-$env:ZEROSOC_ALLOWED_ORIGINS = "http://YOUR_TRUSTED_LAN_HOST:5500"
-python run.py
-```
+## API endpoints
 
-Binding to `0.0.0.0` exposes the plain-HTTP service to devices that can reach the host. Use it only on a trusted network, choose an exact dashboard origin, and understand that the API key and response data are not protected by TLS. Raspberry Pi and cross-device LAN deployment remain planned and unverified on hardware.
+The API normalizes trailing slashes. `/health` and `/status` are public aliases for their versioned counterparts; `/system` is also an implemented alias for `/api/v1/system`, but it remains protected.
+
+### Health, status, and observability
+
+| Method | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/health`, `/api/v1/health` | Public | Return service health. |
+| GET | `/status`, `/api/v1/status` | Public | Return service status and uptime. |
+| GET | `/system`, `/api/v1/system` | `X-API-Key` | Return host system details. |
+| GET | `/api/v1/logs/recent` | `X-API-Key` | Return recent structured request logs. |
+| GET | `/api/v1/metrics` | `X-API-Key` | Return request, event, and device metrics. |
+
+### Events
+
+| Method | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/v1/events` | `X-API-Key` | List and filter security events. |
+| POST | `/api/v1/events` | `X-API-Key` | Validate and create a security event. |
+| GET | `/api/v1/events/{id}` | `X-API-Key` | Return one event by ID. |
+| GET | `/api/v1/events/summary` | `X-API-Key` | Summarize event counts, tags, and recent activity. |
+| GET | `/api/v1/events/export` | `X-API-Key` | Export filtered events as CSV. |
+
+### Alerts and incidents
+
+| Method | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/v1/alerts` | `X-API-Key` | List and filter alerts. |
+| GET | `/api/v1/alerts/export` | `X-API-Key` | Export filtered alerts as CSV. |
+| POST | `/api/v1/alerts/{id}/status` | `X-API-Key` | Update an alert status. |
+| GET | `/api/v1/alerts/incidents/export` | `X-API-Key` | Export grouped incidents as CSV. |
+| GET | `/api/v1/alerts/incidents/activity` | `X-API-Key` | List incident activity. |
+| GET | `/api/v1/alerts/incidents/activity/export` | `X-API-Key` | Export incident activity as CSV. |
+| POST | `/api/v1/alerts/incidents/{id}/state` | `X-API-Key` | Update incident status, owner, or note. |
+
+### Reports and notifications
+
+| Method | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/v1/alerts/reports` | `X-API-Key` | List and filter investigation reports. |
+| GET | `/api/v1/alerts/reports/activity` | `X-API-Key` | List report lifecycle activity. |
+| GET | `/api/v1/alerts/reports/activity/export` | `X-API-Key` | Export report activity as CSV. |
+| GET | `/api/v1/alerts/reports/{id}/print` | `X-API-Key` | Return a printable report view. |
+| GET | `/api/v1/alerts/reports/{id}/export` | `X-API-Key` | Export a report bundle. |
+| POST | `/api/v1/alerts/{id}/report` | `X-API-Key` | Create a report from an alert. |
+| POST | `/api/v1/alerts/reports/{id}/status` | `X-API-Key` | Finalize or reopen a report. |
+| POST | `/api/v1/alerts/reports/{id}/details` | `X-API-Key` | Update report title or summary. |
+| POST | `/api/v1/alerts/reports/{id}/archive` | `X-API-Key` | Archive a report without deleting it. |
+| POST | `/api/v1/alerts/reports/{id}/restore` | `X-API-Key` | Restore an archived report. |
+| GET | `/api/v1/alerts/notifications` | `X-API-Key` | List notification history and summary data. |
+| POST | `/api/v1/alerts/notifications` | `X-API-Key` | Request alert notification delivery. |
+
+### Devices and network operations
+
+| Method | Endpoint | Auth | Purpose |
+| --- | --- | --- | --- |
+| GET | `/api/v1/devices` | `X-API-Key` | List and filter discovered devices. |
+| GET | `/api/v1/devices/export` | `X-API-Key` | Export device inventory as CSV. |
+| GET | `/api/v1/network/scan` | `X-API-Key` | Trigger local network discovery. |
 
 ## Security controls
 
@@ -106,9 +207,7 @@ Implemented controls include:
 - parameterized SQLite operations;
 - error responses that avoid reflecting request bodies, secrets, stack traces, or decoder details.
 
-These are application-level controls for a portfolio project. ZeroSOC has one shared API key, no user accounts or role-based access, no TLS termination, no rate limiter, no production reverse proxy, and no claim of penetration testing or complete security.
-
-See [SECURITY.md](SECURITY.md) for responsible reporting.
+These are application-level controls for a portfolio project, not a claim of complete security or production readiness. ZeroSOC has one shared API key, no user accounts or role-based access, no TLS termination, no rate limiter, and no production reverse proxy. See [SECURITY.md](SECURITY.md) for responsible reporting.
 
 ## Testing
 
@@ -124,81 +223,46 @@ Run the automated suite:
 python -m unittest tests.test_run
 ```
 
-Current verified baseline: **141 tests, all passing**. The suite covers authentication, CORS, configuration, request framing and size limits, JSON validation, endpoint behavior, persistence, notifications, and other backend contracts without requiring a live LAN scan.
-
-## API endpoints
-
-`/health`, `/status`, `/api/v1/health`, and `/api/v1/status` are public. Other data and mutation routes require `X-API-Key`.
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/v1/health` | Health response |
-| GET | `/api/v1/status` | Service status |
-| GET | `/api/v1/system` | Host system details |
-| GET | `/api/v1/logs/recent` | Recent request logs |
-| GET | `/api/v1/metrics` | Request, event, and device metrics |
-| GET/POST | `/api/v1/events` | List or create events |
-| GET | `/api/v1/events/{id}` | Retrieve one event |
-| GET | `/api/v1/events/summary` | Event counts and summaries |
-| GET | `/api/v1/events/export` | CSV event export |
-| GET | `/api/v1/alerts` | List alerts |
-| GET | `/api/v1/alerts/export` | CSV alert export |
-| POST | `/api/v1/alerts/{id}/status` | Update alert status |
-| GET | `/api/v1/alerts/incidents/export` | Incident export |
-| GET | `/api/v1/alerts/incidents/activity` | Incident activity |
-| GET | `/api/v1/alerts/incidents/activity/export` | Incident activity export |
-| POST | `/api/v1/alerts/incidents/{id}/state` | Update incident state |
-| GET | `/api/v1/alerts/reports` | List investigation reports |
-| GET | `/api/v1/alerts/reports/activity` | Report activity |
-| GET | `/api/v1/alerts/reports/activity/export` | Report activity export |
-| GET | `/api/v1/alerts/reports/{id}/print` | Printable report |
-| GET | `/api/v1/alerts/reports/{id}/export` | Report export |
-| POST | `/api/v1/alerts/{id}/report` | Create an alert report |
-| POST | `/api/v1/alerts/reports/{id}/status` | Update report status |
-| POST | `/api/v1/alerts/reports/{id}/details` | Update report details |
-| POST | `/api/v1/alerts/reports/{id}/archive` | Archive a report |
-| POST | `/api/v1/alerts/reports/{id}/restore` | Restore a report |
-| GET/POST | `/api/v1/alerts/notifications` | List or deliver notifications |
-| GET | `/api/v1/devices` | Device inventory |
-| GET | `/api/v1/devices/export` | CSV device export |
-| GET | `/api/v1/network/scan` | Trigger a local network scan |
+The suite exercises authentication, CORS, configuration, request framing and size limits, JSON validation, endpoint behavior, persistence, notifications, and other backend contracts without opening an external connection, binding a LAN interface, or scanning a network. See [Project status](#project-status) for the latest observed result.
 
 ## Portfolio highlights
 
 - Versioned HTTP APIs with consistent JSON responses and request IDs
 - SQLite-backed events, devices, alerts, incidents, reports, and notifications
 - Rule-based event classification, tagging, alert creation, and correlation
-- CSV/JSON-style operational exports and a browser dashboard
-- Security-hardening work through ZS-3.1 backed by automated tests
-- Repository governance and documentation for responsible collaboration
+- CSV exports and a browser-based operational dashboard
+- Defensive input validation and authentication regression coverage
+- Repository governance, security guidance, and technical documentation
 
 ## Screenshots
 
-The retained images are historical portfolio evidence; ZS-4 did not recapture or live-verify them.
+These retained images are historical portfolio evidence. They were not recaptured or freshly runtime-verified during ZS-5.
 
 ![Dashboard overview](screenshots/dashboard-overview.png)
 
+*Dashboard overview showing service health, system context, and operational metrics.*
+
 ![Event summary and analytics](screenshots/event-summary-analytics.png)
+
+*Event analytics showing how collected security activity is summarized for review.*
 
 ![Alerts, incidents, and notifications](screenshots/alerts-incidents-notifications.png)
 
+*Modeled SOC workflow connecting alerts, grouped incidents, and notification history.*
+
 ![Investigation reports and resolved alerts](screenshots/reports-resolved-alerts.png)
 
-![Security events](screenshots/dashboard-events.png)
+*Investigation reporting and alert-resolution workflow retained as portfolio evidence.*
 
-![Network devices](screenshots/dashboard-devices.png)
-
-![API health response](screenshots/api-health.png)
-
-See [the screenshot inventory](docs/screenshots-inventory.md) for all retained assets.
+See [the complete screenshot inventory](docs/screenshots-inventory.md) for every retained dashboard and API image.
 
 ## Limitations and planned work
 
-Current limitations include a single shared credential, plain HTTP, a single-process standard-library server, limited pagination, rule-based detection/correlation, platform-dependent network discovery, and no validated Raspberry Pi deployment. Large datasets and accessibility need further dashboard testing. Webhook delivery depends on an operator-supplied external endpoint and is not exercised by routine setup or tests.
+Current limitations include a single shared credential, plain HTTP, a single-process standard-library server, limited pagination, rule-based detection and correlation, platform-dependent network discovery, and no validated Raspberry Pi deployment. Large datasets and accessibility need further dashboard testing. Webhook delivery depends on an operator-supplied external endpoint and is not exercised by routine setup or tests.
 
-Planned work includes stronger identity and authorization, deployment guidance and hardware validation, improved pagination and accessibility, richer correlation, and production-oriented transport/proxy guidance. Implemented capabilities are not listed as future work.
+`app/main.py` remains in the repository as a retained historical entry-point file, but it is not the supported runtime entry point. Its disposition is deferred; use `run.py`.
 
-See [Known Limitations and Next Upgrades](docs/known-limitations-and-next-upgrades.md).
+Planned work includes stronger identity and authorization, deployment guidance and hardware validation, improved pagination and accessibility, richer correlation, and production-oriented transport and proxy guidance. See [Known Limitations and Next Upgrades](docs/known-limitations-and-next-upgrades.md).
 
 ## License
 
