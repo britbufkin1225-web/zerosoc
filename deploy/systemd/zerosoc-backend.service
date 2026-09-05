@@ -1,0 +1,37 @@
+[Unit]
+Description=ZeroSOC backend API (localhost-only, reached via SSH tunnel)
+Documentation=https://github.com/britbufkin1225-web/zerosoc
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=devdevbuilds
+Group=devdevbuilds
+WorkingDirectory=/home/devdevbuilds/zerosoc
+
+# Secrets stay in the 0600 .env file; no secret value appears in this unit.
+EnvironmentFile=/home/devdevbuilds/zerosoc/.env
+Environment=PYTHONUNBUFFERED=1
+
+# .env sets ZEROSOC_HOST=0.0.0.0. systemd applies EnvironmentFile= AFTER
+# Environment=, so an Environment= line cannot override it. The localhost-only
+# bind required by the SSH-tunnel architecture is therefore enforced at exec
+# time via /usr/bin/env, which always wins. .env is left unmodified so manual
+# runs keep their existing behavior.
+ExecStart=/usr/bin/env ZEROSOC_HOST=127.0.0.1 /home/devdevbuilds/zerosoc/.venv/bin/python /home/devdevbuilds/zerosoc/run.py
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+SyslogIdentifier=zerosoc-backend
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

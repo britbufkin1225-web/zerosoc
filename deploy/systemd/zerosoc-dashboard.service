@@ -1,0 +1,29 @@
+[Unit]
+Description=ZeroSOC dashboard static file server (localhost-only)
+Documentation=https://github.com/britbufkin1225-web/zerosoc
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=devdevbuilds
+Group=devdevbuilds
+WorkingDirectory=/home/devdevbuilds/zerosoc/dashboard
+
+ExecStart=/home/devdevbuilds/zerosoc/.venv/bin/python -m http.server 5500 --bind 127.0.0.1 --directory /home/devdevbuilds/zerosoc/dashboard
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+SyslogIdentifier=zerosoc-dashboard
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
