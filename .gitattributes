@@ -1,0 +1,4 @@
+# Deployable systemd unit files must keep LF endings. A CRLF checkout on
+# Windows would put a trailing carriage return on directives such as
+# ExecStart=, which systemd treats as part of the value and fails to execute.
+*.service text eol=lf
