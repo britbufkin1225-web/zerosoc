@@ -118,6 +118,8 @@ curl -H "X-API-Key: $ZEROSOC_API_KEY" http://localhost:8000/api/v1/system
 
 The backend refuses to start when `ZEROSOC_API_KEY` is unset, blank, or whitespace-only. Never commit a real key. `.env.example` is reference material only; the standard-library application does **not** automatically load `.env` files.
 
+For a persistent Raspberry Pi deployment that survives closed terminals, crashes, and reboots — two `systemd` services plus a Windows SSH-tunnel launcher — see [Raspberry Pi Deployment](docs/raspberry-pi-deployment.md).
+
 ## Configuration
 
 The application reads configuration directly from the process environment.
